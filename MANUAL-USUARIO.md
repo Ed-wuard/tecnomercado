@@ -5,11 +5,12 @@ Guía práctica para consultar el stock, registrar operaciones y administrar rec
 ## 1. Antes de empezar
 
 1. Abrí `index.html` con un navegador moderno (Chrome, Edge o Firefox).
-2. La aplicación carga con datos de demostración para que puedas probarla.
-3. En una computadora, usá el menú de la izquierda. En un teléfono, tocá **☰** para abrirlo.
+   La primera vez, creá la contraseña de al menos ocho caracteres para el usuario **administrador** y confirmala. No hay contraseña predefinida.
+2. La aplicación carga 17 perfiles de barra en **Materia prima** y relaciona con ellos las 23 piezas fabricadas del documento. Por ejemplo, **H22** es la materia prima de **Guia accionamiento**. Los productos, recetas y saldos cero se conservan al recargar. Los perfiles sin saldo aparecen como **Pendiente de carga**.
+3. Iniciá sesión con tu usuario y contraseña. En una computadora, usá el menú de la izquierda; en un teléfono, tocá **☰** para abrirlo.
 4. Los cambios se guardan automáticamente en el navegador y en el dispositivo donde abriste la aplicación.
 
-> **Importante:** esta versión es una demo local. No tiene un servidor central: los datos no se comparten entre dispositivos ni usuarios. Si borrás los datos del navegador o cambiás de dispositivo, podrías perder el inventario. Exportá copias con regularidad.
+> **Importante:** esta versión es local y no tiene servidor. Las contraseñas se guardan como hash con sal, pero los datos y permisos se almacenan en el navegador y pueden manipularse desde el dispositivo. No reemplaza autenticación ni control de acceso de un servidor. Los datos no se comparten entre dispositivos; si borrás los datos del navegador, también perdés las cuentas y podrías perder el inventario.
 
 ## 2. El panel general
 
@@ -17,7 +18,7 @@ Al entrar, el **Panel general** muestra:
 
 - **Productos activos:** total de productos simples y compuestos.
 - **Unidades disponibles:** suma de las existencias registradas.
-- **Stock bajo:** productos con stock igual o menor al mínimo establecido.
+- **Stock bajo:** productos con saldo conocido de hasta 700 unidades.
 - **Productos compuestos:** cantidad de recetas creadas.
 - **Productos con stock bajo:** lista de artículos que requieren atención.
 - **Actividad reciente:** últimos movimientos registrados.
@@ -34,7 +35,7 @@ Usá **Ver inventario**, el menú principal o los accesos rápidos para ir a cad
 4. Tocá el encabezado **Producto**, **Categoría** o **Disponible** para ordenar.
 5. Usá **Limpiar filtros** para volver a ver todo.
 
-El estado **Disponible**, **Stock bajo** o **Agotado** se calcula comparando la cantidad con el stock mínimo.
+La alarma es fija en **700 unidades** para todos los productos. Los artículos cuyo saldo todavía no se cargó muestran **Pendiente de carga** y no disparan la alarma. La tarjeta **Stock bajo**, la campana y el enlace del panel abren el inventario filtrado por esa alarma. El panel prioriza primero los productos asociados a los plazos de entrega más largos.
 
 ### Agregar un producto
 
@@ -67,7 +68,7 @@ Cada operación queda asociada al nombre del usuario activo. Consultá el histor
 
 ## 5. Categorías
 
-La demo empieza con **Materia prima**, **En proceso** y **Productos terminados**.
+Las categorías iniciales son **Materia prima**, **En proceso**, **Productos terminados**, **Pieza de proveedores** y **Pieza de mecanizado**. En **Categorías**, usá el botón de abrir en una tarjeta para ir directamente al inventario filtrado por esa categoría. En el documento, el campo **Materia Prima** identifica la barra: **H** indica hexagonal y **R**, redonda. El peso por pieza se usa para la conversión. Reconquista es el proveedor habitual; las piezas Forja se asocian a Packling. Si un perfil tiene más de un proveedor, se puede elegir en el pedido.
 
 - Entrá en **Categorías** para consultar cuántos productos y unidades hay en cada una.
 - Usá **Nueva categoría** para agregar otra y elegí un color identificador.
@@ -76,9 +77,31 @@ La demo empieza con **Materia prima**, **En proceso** y **Productos terminados**
 
 Para mover un producto entre categorías, registrá una **Transferencia de categoría** desde Movimientos.
 
-## 6. Recetas y producción (BOM)
+## 6. Pedidos y compras
+
+1. Abrí **Pedidos** y tocá **Nuevo pedido**.
+2. Elegí el sector y luego el producto. **Mecanizado** muestra perfiles de **Materia prima** y pide kg; **Línea de armado** muestra únicamente productos de **Pieza de proveedores** y pide unidades. También podés indicar fecha necesaria y una observación.
+3. Elegí el proveedor del catálogo. El formulario muestra su plazo y la fecha estimada de llegada; si esta queda después de la fecha necesaria, aparece una advertencia antes de enviar el pedido.
+4. El perfil **Compras** puede cambiar el estado a **En gestión**, **Comprado**, **Recibido** o **Rechazado**. Administrador también puede gestionar los estados.
+5. Al marcar un pedido como **Recibido**, los kilos se suman al stock del perfil de materia prima. La conversión a piezas es una estimación de la calculadora; no fabrica ni ingresa piezas automáticamente.
+6. **Lista de compras** descarga en CSV o Excel las solicitudes **Solicitado** y **En gestión**, consolidadas por SKU y proveedor con cantidades sumadas. Incluye plazo y fecha estimada, respeta el filtro de sector y, si seleccionás un estado, exporta ese estado.
+
+Producción y Administrador pueden generar pedidos. Los datos se guardan en este navegador; no se sincronizan automáticamente con otros dispositivos.
+
+En **Proveedores**, Administrador puede agregar proveedores y modificar el plazo en días. Los tiempos se cargaron desde la planilla; cuando un proveedor tenía distintos plazos, se usa el mayor como estimación conservadora. ADAP-CAR, BREMET y PALUMBO no tenían un plazo informado y quedan pendientes de completar. Reconquista, Packling y TECNOMERCADO también quedan sin días hasta que se definan.
+
+## 7. Calculadora de mecanizado
+
+1. Abrí **Calculadora** y elegí la pieza fabricada.
+2. La pantalla muestra el perfil de barra asociado y el peso por pieza. Ingresá kilos disponibles para estimar cuántas piezas completas rendirían, o ingresá piezas para calcular los kilos de barra requeridos.
+
+El peso usado es el peso por pieza indicado en el documento. La conversión no contempla merma de corte ni proceso, por lo que es una estimación teórica para planificación.
+
+## 8. Recetas y producción (BOM)
 
 Una receta describe cuánto material se necesita para fabricar **una unidad** de un producto compuesto.
+
+La aplicación incluye las recetas **Valvula de cilindro**, **Valvula de carga** y **Regulador**, importadas de sus planillas. La disponibilidad queda en cero si un componente no está vinculado o todavía no tiene stock. En **Editar receta**, los ingredientes pendientes conservan el nombre de origen para poder asignarles el producto correcto. Hay tres descripciones que necesitan revisión: **ANILLO DE RESPALDO**, **TORRE LATON NACIONAL** y **CONECTOR DE AGUA M10 Ø10 AEB** (el catálogo disponible indica Ø9). **RESORTE CONTRASTE** está identificado como VM4522, pero requiere cargar su stock.
 
 ### Crear una receta
 
@@ -104,38 +127,39 @@ La aplicación descuenta automáticamente la cantidad correspondiente de cada co
 
 En **Movimientos**, seleccioná el producto compuesto y elegí **Salida**. Se usarán primero las unidades terminadas disponibles. Si faltan unidades, la aplicación intentará completar la salida ensamblando las restantes al momento y descontando los componentes de la receta. Si no alcanza el stock de los componentes, la salida se rechaza sin procesarse.
 
-## 7. Usuarios y auditoría
+### Producción diaria
+
+En **Producción diaria**, elegí la fecha y registrá la cantidad de un producto compuesto en **Línea de armado**. Se comprueba el stock, se descuentan los componentes y se suman las unidades terminadas. Si el saldo de algún componente o del producto terminado está pendiente de carga, primero registrá su stock actual con un **Ajuste de stock** en Movimientos; podés ingresar cero.
+
+En **Mecanizado**, seleccioná una pieza y registrá la cantidad fabricada. Esta queda en **Stock pendiente de entrega**, sin modificar el inventario general. Al pulsar **Entregado**, se suma una única vez al stock general de la pieza y queda registrado el movimiento. Antes de entregar, el stock general debe estar cargado, incluso si es cero. La calculadora no descuenta barras automáticamente.
+
+## 9. Usuarios y auditoría
 
 En **Usuarios y auditoría** podés:
 
-- Agregar usuarios y asignarles un perfil: **Administrador**, **Producción** o **Depósito**.
-- Cambiar el usuario activo desde el nombre de usuario en la parte superior o el ícono junto al perfil.
+- Agregar usuarios con nombre de acceso, contraseña y permisos de **Ver** y **Modificar** por módulo. Los sectores de armado y mecanizado tienen permisos separados.
+- Editar los permisos, nombre de acceso o contraseña de un usuario con el botón de lápiz. Dejá la contraseña vacía para conservarla.
+- Cerrar sesión desde el nombre de usuario en la parte superior o el ícono junto al perfil e iniciar sesión con otra cuenta.
 - Desactivar el acceso de otro usuario.
 - Consultar las acciones registradas en **Registro de auditoría**.
 
-Los perfiles muestran diferentes accesos dentro de esta demo:
+La cuenta **Administrador** tiene acceso completo. Las cuentas nuevas acceden únicamente a los módulos y acciones que se habiliten explícitamente; marcar **Modificar** activa también **Ver**. La actualización inicial conserva únicamente la cuenta Administrador y no elimina el inventario ni el historial de movimientos.
 
-- **Administrador:** gestiona todas las secciones.
-- **Producción:** trabaja con recetas y producción.
-- **Depósito:** trabaja con inventario y movimientos.
-
-> **Límite importante:** cambiar de usuario no solicita contraseña y los permisos se aplican en la interfaz del navegador. Esto es útil para probar los perfiles, pero no es seguridad real ni reemplaza usuarios autenticados en un servidor.
-
-## 8. Importar planillas
+## 10. Importar planillas
 
 En **Informes y datos**, descargá primero la **plantilla CSV** si necesitás el formato esperado. Se aceptan archivos `.csv` y `.xlsx` de hasta **5 MB**. En Excel se utiliza la primera hoja.
 
-La primera fila debe incluir estas columnas (escritas así):
+La plantilla incluye estas columnas; solo las primeras seis son obligatorias. Las columnas técnicas son opcionales:
 
 ```text
-sku, nombre, categoria, stock, minimo, unidad
+sku, nombre, categoria, stock, minimo, unidad, proveedor, perfil_barra, peso_barra_g, unidad_compra
 ```
 
 Ejemplo:
 
 ```csv
-sku,nombre,categoria,stock,minimo,unidad
-MP-005,Tornillo M8,Materia prima,240,50,u
+sku,nombre,categoria,stock,minimo,unidad,proveedor,perfil_barra,peso_barra_g,unidad_compra
+MP-005,Tornillo M8,Materia prima,240,700,u,Proveedor ejemplo,,,u
 ```
 
 1. Conservá los encabezados de la plantilla.
@@ -144,9 +168,9 @@ MP-005,Tornillo M8,Materia prima,240,50,u
 4. En **Importar inventario**, seleccioná el archivo o arrastralo al recuadro.
 5. Esperá el mensaje de confirmación o corregí los errores indicados.
 
-Un SKU que ya existe actualiza los datos y la cantidad del producto. Un SKU nuevo crea un producto. Las categorías desconocidas se agregan automáticamente. La importación se valida antes de procesar las filas; los cambios de stock importados también generan movimientos.
+Un SKU que ya existe actualiza los datos y la cantidad del producto. Un SKU nuevo crea un producto. Las categorías desconocidas se agregan automáticamente. La importación se valida antes de procesar las filas; los cambios de stock importados también generan movimientos. Las exportaciones conservan proveedor, perfil, peso por pieza y unidad de compra.
 
-## 9. Exportar y guardar reportes
+## 11. Exportar y guardar reportes
 
 En **Informes y datos**, elegí el formato de exportación **CSV (.csv)** o **Excel (.xlsx)** y descargá:
 
@@ -154,20 +178,21 @@ En **Informes y datos**, elegí el formato de exportación **CSV (.csv)** o **Ex
 - Las recetas y sus componentes.
 - El historial de movimientos.
 - El registro de auditoría.
+- La lista de compras pendiente desde **Pedidos**.
 
 Para filtrar movimientos o auditoría por fechas, completá **Desde** y/o **Hasta**. Dejá ambos campos vacíos para incluir todas las fechas. La fecha inicial no puede ser posterior a la final.
 
 Para obtener un PDF, en **Reportes para imprimir** elegí el listado de stock, las fichas de recetas o el balance de movimientos. En la ventana de impresión, seleccioná **Guardar como PDF**. Los reportes incluyen la información de la sección; si querés imprimir todos los productos, limpiá los filtros del inventario antes de imprimir.
 
-## 10. Recomendaciones de uso
+## 12. Recomendaciones de uso
 
 - Registrá cada recepción, despacho o ajuste en el momento.
-- Revisá el stock mínimo y las alertas antes de confirmar una producción.
+- Cargá los saldos actuales de las piezas nuevas antes de usar la alarma o registrar movimientos; la calculadora puede usarse desde el principio.
 - Mantené SKU únicos y fáciles de identificar.
 - Descargá periódicamente el inventario y los movimientos como respaldo.
 - Evitá abrir varias copias del sistema a la vez; para compartir datos entre personas o dispositivos se necesita una versión con servidor y base de datos.
 
-## 11. Solución de problemas
+## 13. Solución de problemas
 
 | Si ocurre esto | Qué podés hacer |
 |---|---|

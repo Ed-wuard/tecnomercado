@@ -1,5 +1,41 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
+[hidden]{display:none!important}
+.login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:#f6f7fb}
+.login-box{width:min(100%,390px);padding:32px;background:#fff;border:1px solid #e8ebf1;border-radius:8px;box-shadow:0 14px 40px #25334e0d}
+.login-brand{display:flex;align-items:center;gap:12px;margin-bottom:32px}.login-brand strong{display:block;font:800 16px Manrope,sans-serif}.login-brand strong span{color:#5667e9}.login-brand small{display:block;color:#8790a3;font-size:9px;letter-spacing:1px}.login-box h1{font:800 22px Manrope,sans-serif;margin:0 0 8px}.login-subtitle{font-size:12px;color:#8790a3;margin:0 0 22px}.login-submit{width:100%;padding:11px}.login-error{color:#b7544d;font-size:11px}.login-local{margin:20px 0 0;color:#8790a3;font-size:10px;text-align:center}.login-local i{margin-right:4px}
+.daily-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.daily-area{min-width:0;border-top:2px solid #dfe4ed;padding-top:16px}.daily-area h3{font:700 12px Manrope,sans-serif;margin:20px 0 8px}.daily-form{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;align-items:end;gap:6px 10px;margin-bottom:18px}.daily-form label{grid-row:1}.daily-form select,.daily-form input,.daily-form button{grid-row:2}.daily-form .btn{white-space:nowrap}.daily-area .empty-state{padding:16px 0}.permissions-heading{font:700 13px Manrope,sans-serif;margin:24px 0 8px}.permission-table{min-width:350px}.permission-table input{cursor:pointer}
+@media(max-width:1100px){.daily-grid{grid-template-columns:1fr}.daily-form{grid-template-columns:minmax(0,1fr) 130px auto}}
+@media(max-width:620px){.daily-form{grid-template-columns:1fr 110px}.daily-form .btn{grid-row:3;grid-column:1/-1}.login-box{padding:24px}}
+
+.inventory-source-note{margin-top:-10px}
+.orders-card{padding:0 18px 12px}
+.orders-table{min-width:1200px}
+.suppliers-card{padding:0 18px 12px}
+.delivery-warning{background:#fff5e8;color:#a86a1d}
+.component-pending{display:block;margin-bottom:4px;color:#a86a1d;font-size:8px}
+.orders-table .product-code{display:block}
+.order-status{width:130px;min-width:130px;padding:6px 24px 6px 8px;font-size:9px}
+.status-pill.status-requested,.order-status.status-requested{background:#eff1ff;color:#5969c8}
+.status-pill.status-purchased,.order-status.status-purchased{background:#eaf8f1;color:#328d68}
+.status-unknown{background:#f1f3f6;color:#788194}
+.stock-number.unknown{color:#788194}
+.stat-link{cursor:pointer;transition:border-color .18s,box-shadow .18s}
+.stat-link:hover,.stat-link:focus-visible{border-color:#e4bb74;box-shadow:0 4px 14px #25334e12;outline:none}
+.category-card-top [data-action="view-category"]{color:#5667e9}
+.machining-calculator{max-width:980px;padding:22px}
+.calculator-fields{display:grid;grid-template-columns:minmax(230px,1.4fr) repeat(2,minmax(150px,1fr));gap:15px;align-items:end}
+.calculator-summary{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-top:1px solid #edf0f5;margin-top:18px;padding-top:16px;color:#788194;font-size:10px}
+.calculator-summary strong{font:700 13px Manrope,sans-serif;color:#2b344b}
+.calculator-profile{font-weight:700;color:#5969c8}
+.calculator-result{margin:14px 0;padding:15px;border-radius:8px;background:#f5f7fb;color:#2b344b;font:700 14px Manrope,sans-serif}
+.role-buyer{background:#fff5e8;color:#cf8d34}
+.role-pill.Compras{background:#fff5e8;color:#bd7a25}
+.roles-strip.roles-strip{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1150px){.roles-strip.roles-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.roles-strip.roles-strip{grid-template-columns:1fr}}
+@media(max-width:760px){.calculator-fields{grid-template-columns:1fr}.machining-calculator{padding:16px}.calculator-summary{gap:9px}}
+
 :root{--ink:#1d263b;--muted:#8790a3;--line:#edf0f5;--canvas:#f6f7fb;--blue:#5667e9;--blue-dark:#4555d7;--sidebar:#fff;--green:#1d9e71;--orange:#e89b36;--purple:#8e68dc}
 *{box-sizing:border-box}
 body{margin:0;background:var(--canvas);color:var(--ink);font-family:"DM Sans",sans-serif;font-size:14px}
