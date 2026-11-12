@@ -31,6 +31,7 @@ Guía práctica para consultar el stock, registrar operaciones y administrar rec
 6. Desplegá la carpeta raíz del proyecto en Netlify. `netlify.toml` configura publicación estática desde `.`; no hace falta comando de build ni Node.js.
 7. Iniciá sesión como Administrador. Si la app anterior y esta versión usan el mismo origen del navegador, el estado local disponible se copia a Firestore al inicializarse la base. Los navegadores aíslan el almacenamiento por origen; al cambiar de `file://` o `localhost` al dominio Netlify, los datos locales anteriores no son accesibles desde el nuevo sitio. En ese caso exportá los datos antes del cambio y prepará la migración. Los usuarios antiguos y sus contraseñas locales no se migran: volvé a crearlos desde **Usuarios y auditoría**, con correo y una contraseña nueva.
 8. Para agregar una persona, usá **Agregar usuario**. Se crea una cuenta de Firebase Authentication y un perfil con su rol y permisos. Los cambios de contraseña se hacen mediante **Olvidé mi contraseña**.
+9. Para habilitar la eliminación definitiva de usuarios, instalá las dependencias de `functions` con `npm install` desde esa carpeta y desplegá las funciones con `firebase deploy --only functions`. La cuenta de Firebase que despliega necesita permisos para Cloud Functions y Cloud Build; puede requerirse habilitar la facturación del proyecto.
 
 Los SDK de Firebase, Bootstrap y Excel se cargan desde CDN, por lo que el navegador necesita conexión a Internet.
 
@@ -173,6 +174,7 @@ En **Usuarios y auditoría** podés:
 - Editar el nombre del Administrador desde el mismo botón. El correo y la contraseña del Administrador se administran en Firebase Authentication. Si cambiás el correo allí, el perfil se sincroniza al iniciar sesión; para el primer inicio, actualizá también el correo de bootstrap en `firebase-config.js` y `firestore.rules`.
 - Cerrar sesión desde el nombre de usuario en la parte superior o el ícono junto al perfil e iniciar sesión con otra cuenta.
 - Desactivar el acceso de otro usuario.
+- Eliminar definitivamente un usuario que no sea Administrador ni la cuenta activa. Esta acción elimina también su cuenta de Firebase Authentication y libera el correo para crear otro perfil. Requiere desplegar la función de Firebase indicada en **Puesta en marcha**; no se puede deshacer.
 - Consultar las acciones registradas en **Registro de auditoría**.
 
 La cuenta **Administrador** tiene acceso completo. Las cuentas nuevas acceden únicamente a los módulos y acciones que se habiliten explícitamente; marcar **Modificar** activa también **Ver**. Los perfiles se guardan en Firestore y las reglas de la base validan los permisos de escritura.

@@ -8,7 +8,9 @@
   const bootstrapAdminEmail = String(window.firebaseBootstrapAdminEmail || "").toLowerCase();
   let firebaseApp = null;
   let firebaseAuth = null;
+  let firebaseFunctions = null;
   let firebaseDb = null;
+  let firebaseFunctionsError = "";
   let userManagementAuth = null;
   let cloudRevision = null;
   let cloudStateUnsubscribe = null;
@@ -24,6 +26,13 @@
       firebaseAuth = firebaseApp.auth();
       firebaseDb = firebaseApp.firestore();
       firebaseDb.settings({ ignoreUndefinedProperties: true });
+      try {
+        if (typeof firebaseApp.functions !== "function") throw new Error("No se cargó el SDK de Firebase Functions.");
+        firebaseFunctions = firebaseApp.functions("us-central1");
+      } catch (error) {
+        firebaseFunctionsError = error.message || "Firebase Functions no está disponible.";
+        console.error("No se pudo inicializar Firebase Functions.", error);
+      }
     } catch (error) {
       firebaseStartupError = error.message || "No se pudo inicializar Firebase.";
       console.error("No se pudo inicializar Firebase.", error);
@@ -602,7 +611,7 @@
     document.getElementById("dailyPendingEmpty").classList.toggle("d-none", pending.length > 0);
   }
   function renderUsers() {
-    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions"><button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}" aria-label="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}"><i class="bi bi-pencil"></i></button>${user.role !== "Administrador" && user.active ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash"></i></button>` : ""}</div></td></tr>`).join("");
+    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions"><button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}" aria-label="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}"><i class="bi bi-pencil"></i></button>${user.role !== "Administrador" && user.active && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="deactivate-user" data-id="${escapeHtml(user.id)}" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash"></i></button>` : ""}${user.role !== "Administrador" && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Eliminar usuario y liberar su correo" aria-label="Eliminar usuario y liberar su correo"><i class="bi bi-trash3"></i></button>` : ""}</div></td></tr>`).join("");
     document.getElementById("auditRows").innerHTML = state.audit.slice(0, 20).map(item => `<tr><td>${fmtDate(item.date, true)}</td><td>${escapeHtml(item.user)}</td><td><span class="audit-action">${escapeHtml(item.action)}</span></td><td class="audit-details">${escapeHtml(item.detail)}</td></tr>`).join("");
     document.getElementById("auditEmpty").classList.toggle("d-none", state.audit.length > 0);
   }
@@ -612,7 +621,7 @@
     document.querySelectorAll('[data-action="new-order"]').forEach(button => button.classList.toggle("d-none", !allowed("orders-create")));
     document.querySelectorAll('[data-action="new-bom"],[data-action="edit-bom"],[data-action="delete-bom"],[data-action="produce"]').forEach(button => button.classList.toggle("d-none", !allowed("production")));
     document.querySelectorAll('[data-action="new-category"],[data-action="edit-category"],[data-action="delete-category"]').forEach(button => button.classList.toggle("d-none", !allowed("categories")));
-    document.querySelectorAll('[data-action="new-user"],[data-action="edit-user"],[data-action="delete-user"]').forEach(button => button.classList.toggle("d-none", !allowed("admin")));
+    document.querySelectorAll('[data-action="new-user"],[data-action="edit-user"],[data-action="deactivate-user"],[data-action="delete-user"]').forEach(button => button.classList.toggle("d-none", !allowed("admin")));
     document.querySelectorAll('[data-action="new-supplier"],[data-action="edit-supplier"]').forEach(button => button.classList.toggle("d-none", !allowed("suppliers")));
     document.getElementById("dailyAssemblyArea").classList.toggle("d-none", !canView("dailyAssembly"));
     document.getElementById("dailyMachiningArea").classList.toggle("d-none", !canView("dailyMachining"));
@@ -1364,7 +1373,7 @@
     if (action === "edit-supplier") openSupplier(itemId);
     if (action === "new-user") openUser();
     if (action === "edit-user") openUser(itemId);
-    if (action === "delete-user") {
+    if (action === "deactivate-user") {
       if (!requirePermission("admin")) return;
       const user = state.users.find(item => item.id === itemId);
       if (user && user.role !== "Administrador" && user.id !== state.currentUserId && window.confirm(`¿Desactivar el acceso de ${user.name}?`)) {
@@ -1376,6 +1385,23 @@
           console.error("No se pudo desactivar el usuario.", error);
           toast(`No se pudo desactivar el usuario: ${cloudErrorMessage(error)}`, "error");
         }
+      }
+    }
+    if (action === "delete-user") {
+      if (!requirePermission("admin")) return;
+      const user = state.users.find(item => item.id === itemId);
+      if (!user || user.role === "Administrador" || user.id === state.currentUserId) return;
+      const email = user.email || user.username || "";
+      if (!window.confirm(`¿Eliminar definitivamente a ${user.name} (${email})? Se borrará también su cuenta de acceso a Firebase y el correo quedará disponible para crear otro perfil. Esta acción no se puede deshacer.`)) return;
+      try {
+        if (!firebaseFunctions) throw new Error(firebaseFunctionsError || "Firebase Functions no está disponible.");
+        await firebaseFunctions.httpsCallable("deleteManagedUser")({ uid: user.id });
+        state.users = state.users.filter(item => item.id !== user.id);
+        renderUsers();
+        toast(`Usuario eliminado. El correo ${email} ya puede volver a usarse.`);
+      } catch (error) {
+        console.error("No se pudo eliminar el usuario de Firebase.", error);
+        toast(`No se pudo eliminar el usuario: ${cloudErrorMessage(error)}`, "error");
       }
     }
     if (action === "export-inventory" && canView("inventory")) exportInventory();

@@ -25,23 +25,25 @@
         <span class="brand-mark"><i class="bi bi-box-seam"></i></span>
         <span><strong>tecno<span>mercado</span></strong><small>CONTROL DE STOCK</small></span>
       </a>
-      <div class="sidebar-label">MENÚ PRINCIPAL</div>
-      <nav class="side-nav" aria-label="Navegación principal">
-        <button class="nav-link active" data-view="dashboard"><i class="bi bi-grid-1x2"></i>Panel general</button>
-        <button class="nav-link" data-view="inventory"><i class="bi bi-boxes"></i>Inventario <span class="nav-count" id="navProductCount">0</span></button>
-        <button class="nav-link" data-view="production"><i class="bi bi-gear-wide-connected"></i>Producción <span class="nav-badge">BOM</span></button>
-        <button class="nav-link" data-view="daily"><i class="bi bi-calendar-check"></i>Producción diaria</button>
-        <button class="nav-link" data-view="calculator"><i class="bi bi-calculator"></i>Calculadora</button>
-        <button class="nav-link" data-view="movements"><i class="bi bi-arrow-left-right"></i>Movimientos</button>
-        <button class="nav-link" data-view="orders"><i class="bi bi-clipboard2-check"></i>Pedidos <span class="nav-count" id="navOrderCount">0</span></button>
-      </nav>
-      <div class="sidebar-label secondary-label">ADMINISTRACIÓN</div>
-      <nav class="side-nav" aria-label="Administración">
-        <button class="nav-link" data-view="categories"><i class="bi bi-tags"></i>Categorías</button>
-        <button class="nav-link" data-view="suppliers"><i class="bi bi-truck"></i>Proveedores</button>
-        <button class="nav-link" data-view="reports"><i class="bi bi-file-earmark-bar-graph"></i>Informes y datos</button>
-        <button class="nav-link" data-view="users"><i class="bi bi-people"></i>Usuarios y auditoría</button>
-      </nav>
+      <div class="sidebar-navigation">
+        <div class="sidebar-label">MENÚ PRINCIPAL</div>
+        <nav class="side-nav" aria-label="Navegación principal">
+          <button class="nav-link active" data-view="dashboard"><i class="bi bi-grid-1x2"></i>Panel general</button>
+          <button class="nav-link" data-view="inventory"><i class="bi bi-boxes"></i>Inventario <span class="nav-count" id="navProductCount">0</span></button>
+          <button class="nav-link" data-view="production"><i class="bi bi-gear-wide-connected"></i>Producción <span class="nav-badge">BOM</span></button>
+          <button class="nav-link" data-view="daily"><i class="bi bi-calendar-check"></i>Producción diaria</button>
+          <button class="nav-link" data-view="calculator"><i class="bi bi-calculator"></i>Calculadora</button>
+          <button class="nav-link" data-view="movements"><i class="bi bi-arrow-left-right"></i>Movimientos</button>
+          <button class="nav-link" data-view="orders"><i class="bi bi-clipboard2-check"></i>Pedidos <span class="nav-count" id="navOrderCount">0</span></button>
+        </nav>
+        <div class="sidebar-label secondary-label">ADMINISTRACIÓN</div>
+        <nav class="side-nav" aria-label="Administración">
+          <button class="nav-link" data-view="categories"><i class="bi bi-tags"></i>Categorías</button>
+          <button class="nav-link" data-view="suppliers"><i class="bi bi-truck"></i>Proveedores</button>
+          <button class="nav-link" data-view="reports"><i class="bi bi-file-earmark-bar-graph"></i>Informes y datos</button>
+          <button class="nav-link" data-view="users"><i class="bi bi-people"></i>Usuarios y auditoría</button>
+        </nav>
+      </div>
       <div class="sidebar-bottom">
         <div class="sidebar-help"><span class="help-icon"><i class="bi bi-lightbulb"></i></span><strong>¿Necesitás ayuda?</strong><small>Tu inventario, siempre bajo control.</small></div>
         <div class="sidebar-profile">
@@ -189,6 +191,7 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore-compat.js"></script>
   <script src="plan-produccion-data.js"></script>
   <script src="materia-prima-data.js"></script>
