@@ -7,6 +7,8 @@
 .daily-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.daily-area{min-width:0;border-top:2px solid #dfe4ed;padding-top:16px}.daily-area h3{font:700 12px Manrope,sans-serif;margin:20px 0 8px}.daily-form{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;align-items:end;gap:6px 10px;margin-bottom:18px}.daily-form label{grid-row:1}.daily-form select,.daily-form input,.daily-form button{grid-row:2}.daily-form .btn{white-space:nowrap}.daily-area .empty-state{padding:16px 0}.permissions-heading{font:700 13px Manrope,sans-serif;margin:24px 0 8px}.permission-table{min-width:350px}.permission-table input{cursor:pointer}
 @media(max-width:1100px){.daily-grid{grid-template-columns:1fr}.daily-form{grid-template-columns:minmax(0,1fr) 130px auto}}
 @media(max-width:620px){.daily-form{grid-template-columns:1fr 110px}.daily-form .btn{grid-row:3;grid-column:1/-1}.login-box{padding:24px}}
+.invoice-line{display:grid;grid-template-columns:minmax(0,1fr) 120px 34px;gap:8px;align-items:center;margin-bottom:8px}.invoice-line .icon-btn{width:34px;height:36px;color:#cf7571}
+@media(max-width:620px){.invoice-line{grid-template-columns:minmax(0,1fr) 86px 30px;gap:6px}.invoice-line .form-control,.invoice-line .form-select{font-size:9px;padding:8px 6px}}
 
 .inventory-source-note{margin-top:-10px}
 .orders-card{padding:0 18px 12px}

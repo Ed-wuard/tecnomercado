@@ -4,13 +4,35 @@ Guía práctica para consultar el stock, registrar operaciones y administrar rec
 
 ## 1. Antes de empezar
 
-1. Abrí `index.html` con un navegador moderno (Chrome, Edge o Firefox).
-   La primera vez, creá la contraseña de al menos ocho caracteres para el usuario **administrador** y confirmala. No hay contraseña predefinida.
-2. La aplicación carga 17 perfiles de barra en **Materia prima** y relaciona con ellos las 23 piezas fabricadas del documento. Por ejemplo, **H22** es la materia prima de **Guia accionamiento**. Los productos, recetas y saldos cero se conservan al recargar. Los perfiles sin saldo aparecen como **Pendiente de carga**.
-3. Iniciá sesión con tu usuario y contraseña. En una computadora, usá el menú de la izquierda; en un teléfono, tocá **☰** para abrirlo.
-4. Los cambios se guardan automáticamente en el navegador y en el dispositivo donde abriste la aplicación.
+1. Configurá Firebase y Netlify siguiendo **Puesta en marcha: Netlify y Firebase**. La aplicación es estática: HTML5, Bootstrap y JavaScript nativo, sin servidor ni paso de compilación.
+2. Iniciá sesión con el correo y la contraseña de Firebase Authentication. La cuenta inicial de Administrador es **kokitoga10@gmail.com**; su perfil se crea automáticamente al ingresar por primera vez.
+3. La aplicación carga 17 perfiles de barra en **Materia prima** y relaciona con ellos las 23 piezas fabricadas del documento. Por ejemplo, **H22** es la materia prima de **Guia accionamiento**. Los perfiles sin saldo aparecen como **Pendiente de carga**.
+4. Los cambios se guardan en Firestore y se sincronizan entre sesiones. En una computadora, usá el menú de la izquierda; en un teléfono, tocá **☰** para abrirlo.
 
-> **Importante:** esta versión es local y no tiene servidor. Las contraseñas se guardan como hash con sal, pero los datos y permisos se almacenan en el navegador y pueden manipularse desde el dispositivo. No reemplaza autenticación ni control de acceso de un servidor. Los datos no se comparten entre dispositivos; si borrás los datos del navegador, también perdés las cuentas y podrías perder el inventario.
+> **Importante:** las contraseñas las administra Firebase Authentication; nunca se guardan en el estado de inventario. Protegé el acceso a la consola Firebase y no publiques credenciales privadas. Firestore limita cada documento a 1 MiB: este prototipo sincroniza el estado operativo en un documento, por lo que un historial muy extenso requiere separar los movimientos en documentos individuales. La interfaz oculta módulos según el rol y las reglas de Firestore limitan las escrituras; como el estado está centralizado, todo usuario autenticado activo puede leer ese documento. Si necesitás restringir también la lectura de datos por módulo, hay que dividir el almacenamiento en colecciones independientes.
+
+### Puesta en marcha: Netlify y Firebase
+
+1. En Firebase Console, creá un proyecto y registrá una aplicación web.
+2. Copiá `apiKey`, `authDomain`, `projectId` y `appId` de la configuración web a `firebase-config.js`. Esos valores identifican la aplicación web; no pegues claves privadas ni credenciales de una cuenta de servicio. El archivo debe quedar con esta forma:
+
+   ```js
+   window.firebaseConfig = {
+     apiKey: "TU_API_KEY",
+     authDomain: "TU_PROYECTO.firebaseapp.com",
+     projectId: "TU_PROJECT_ID",
+     appId: "TU_APP_ID"
+   };
+   window.firebaseBootstrapAdminEmail = "kokitoga10@gmail.com";
+   ```
+3. En **Authentication → Sign-in method**, habilitá **Email/Password** y creá la cuenta **kokitoga10@gmail.com** con una contraseña segura. Las reglas iniciales reconocen este correo para crear el primer perfil Administrador. Si cambiás ese correo, actualizalo tanto en `firebase-config.js` como en `firestore.rules` y volvé a publicar las reglas.
+4. Creá la base de datos de **Cloud Firestore**. En **Reglas**, publicá el contenido de `firestore.rules`. No uses reglas abiertas para pruebas ni para producción.
+5. En **Authentication → Settings → Authorized domains**, agregá el dominio que te asigne Netlify. Para desarrollo local, agregá también `localhost`.
+6. Desplegá la carpeta raíz del proyecto en Netlify. `netlify.toml` configura publicación estática desde `.`; no hace falta comando de build ni Node.js.
+7. Iniciá sesión como Administrador. Si la app anterior y esta versión usan el mismo origen del navegador, el estado local disponible se copia a Firestore al inicializarse la base. Los navegadores aíslan el almacenamiento por origen; al cambiar de `file://` o `localhost` al dominio Netlify, los datos locales anteriores no son accesibles desde el nuevo sitio. En ese caso exportá los datos antes del cambio y prepará la migración. Los usuarios antiguos y sus contraseñas locales no se migran: volvé a crearlos desde **Usuarios y auditoría**, con correo y una contraseña nueva.
+8. Para agregar una persona, usá **Agregar usuario**. Se crea una cuenta de Firebase Authentication y un perfil con su rol y permisos. Los cambios de contraseña se hacen mediante **Olvidé mi contraseña**.
+
+Los SDK de Firebase, Bootstrap y Excel se cargan desde CDN, por lo que el navegador necesita conexión a Internet.
 
 ## 2. El panel general
 
@@ -86,7 +108,7 @@ Para mover un producto entre categorías, registrá una **Transferencia de categ
 5. Al marcar un pedido como **Recibido**, los kilos se suman al stock del perfil de materia prima. La conversión a piezas es una estimación de la calculadora; no fabrica ni ingresa piezas automáticamente.
 6. **Lista de compras** descarga en CSV o Excel las solicitudes **Solicitado** y **En gestión**, consolidadas por SKU y proveedor con cantidades sumadas. Incluye plazo y fecha estimada, respeta el filtro de sector y, si seleccionás un estado, exporta ese estado.
 
-Producción y Administrador pueden generar pedidos. Los datos se guardan en este navegador; no se sincronizan automáticamente con otros dispositivos.
+Producción y Administrador pueden generar pedidos. Los datos se guardan en Firestore y se sincronizan entre dispositivos.
 
 En **Proveedores**, Administrador puede agregar proveedores y modificar el plazo en días. Los tiempos se cargaron desde la planilla; cuando un proveedor tenía distintos plazos, se usa el mayor como estimación conservadora. ADAP-CAR, BREMET y PALUMBO no tenían un plazo informado y quedan pendientes de completar. Reconquista, Packling y TECNOMERCADO también quedan sin días hasta que se definan.
 
@@ -127,6 +149,15 @@ La aplicación descuenta automáticamente la cantidad correspondiente de cada co
 
 En **Movimientos**, seleccioná el producto compuesto y elegí **Salida**. Se usarán primero las unidades terminadas disponibles. Si faltan unidades, la aplicación intentará completar la salida ensamblando las restantes al momento y descontando los componentes de la receta. Si no alcanza el stock de los componentes, la salida se rechaza sin procesarse.
 
+### Generar una factura de salida
+
+1. Abrí **Informes y datos** y, en **Reportes para imprimir**, tocá **Generar factura de salida**.
+2. Indicá la fecha, el cliente si corresponde, y agregá uno o más productos terminados con sus cantidades.
+3. Tocá **Generar y descontar stock**. Se comprueba el stock total de cada producto antes de confirmar; si no alcanza o está pendiente de carga, no se procesa ninguna salida.
+4. Se genera un comprobante imprimible con número correlativo diario. El stock de los productos compuestos se descuenta por las cantidades facturadas y cada salida queda registrada en **Movimientos** y **Auditoría**.
+
+Esta factura de salida sirve como comprobante de despacho de inventario y muestra productos y cantidades; no incluye precios ni reemplaza una factura fiscal. Para imprimirla, permití las ventanas emergentes del sitio.
+
 ### Producción diaria
 
 En **Producción diaria**, elegí la fecha y registrá la cantidad de un producto compuesto en **Línea de armado**. Se comprueba el stock, se descuentan los componentes y se suman las unidades terminadas. Si el saldo de algún componente o del producto terminado está pendiente de carga, primero registrá su stock actual con un **Ajuste de stock** en Movimientos; podés ingresar cero.
@@ -137,13 +168,14 @@ En **Mecanizado**, seleccioná una pieza y registrá la cantidad fabricada. Esta
 
 En **Usuarios y auditoría** podés:
 
-- Agregar usuarios con nombre de acceso, contraseña y permisos de **Ver** y **Modificar** por módulo. Los sectores de armado y mecanizado tienen permisos separados.
-- Editar los permisos, nombre de acceso o contraseña de un usuario con el botón de lápiz. Dejá la contraseña vacía para conservarla.
+- Agregar usuarios con nombre, correo de Firebase Authentication, contraseña inicial y permisos de **Ver** y **Modificar** por módulo. Los sectores de armado y mecanizado tienen permisos separados.
+- Editar el nombre y los permisos de un usuario con el botón de lápiz. Los correos se administran en Firebase Authentication; cada persona puede restablecer su contraseña desde la pantalla de acceso.
+- Editar el nombre del Administrador desde el mismo botón. El correo y la contraseña del Administrador se administran en Firebase Authentication. Si cambiás el correo allí, el perfil se sincroniza al iniciar sesión; para el primer inicio, actualizá también el correo de bootstrap en `firebase-config.js` y `firestore.rules`.
 - Cerrar sesión desde el nombre de usuario en la parte superior o el ícono junto al perfil e iniciar sesión con otra cuenta.
 - Desactivar el acceso de otro usuario.
 - Consultar las acciones registradas en **Registro de auditoría**.
 
-La cuenta **Administrador** tiene acceso completo. Las cuentas nuevas acceden únicamente a los módulos y acciones que se habiliten explícitamente; marcar **Modificar** activa también **Ver**. La actualización inicial conserva únicamente la cuenta Administrador y no elimina el inventario ni el historial de movimientos.
+La cuenta **Administrador** tiene acceso completo. Las cuentas nuevas acceden únicamente a los módulos y acciones que se habiliten explícitamente; marcar **Modificar** activa también **Ver**. Los perfiles se guardan en Firestore y las reglas de la base validan los permisos de escritura.
 
 ## 10. Importar planillas
 
@@ -190,7 +222,8 @@ Para obtener un PDF, en **Reportes para imprimir** elegí el listado de stock, l
 - Cargá los saldos actuales de las piezas nuevas antes de usar la alarma o registrar movimientos; la calculadora puede usarse desde el principio.
 - Mantené SKU únicos y fáciles de identificar.
 - Descargá periódicamente el inventario y los movimientos como respaldo.
-- Evitá abrir varias copias del sistema a la vez; para compartir datos entre personas o dispositivos se necesita una versión con servidor y base de datos.
+- Firestore rechaza modificaciones cuando otra sesión cambió el inventario al mismo tiempo; actualizá la pantalla y volvé a intentar la operación.
+- Descargá periódicamente el inventario y los movimientos como respaldo; Netlify aloja los archivos estáticos y no reemplaza las copias de seguridad de Firestore.
 
 ## 13. Solución de problemas
 
@@ -202,4 +235,6 @@ Para obtener un PDF, en **Reportes para imprimir** elegí el listado de stock, l
 | No puedo borrar una categoría | Primero cambiá de categoría los productos que todavía pertenecen a ella. |
 | La importación muestra un error | Verificá el formato, los encabezados, los SKU duplicados, los campos obligatorios y que el archivo no supere 5 MB. |
 | La exportación a Excel o el diseño no carga | Revisá la conexión a Internet. La aplicación utiliza Bootstrap y la biblioteca de Excel desde una CDN. CSV es una alternativa de exportación. |
-| Perdí los datos del navegador | Si no exportaste un respaldo, puede que no sea posible recuperarlos. Esta demo no sincroniza ni guarda copias en un servidor. |
+| No puedo iniciar sesión | Verificá que Email/Password esté habilitado en Firebase Authentication, que el dominio esté autorizado y que la cuenta tenga un perfil activo en Firestore. |
+| La app informa que Firebase no está configurado | Completá `firebase-config.js`, publicá `firestore.rules` y volvé a desplegar en Netlify. |
+| No se sincronizan los cambios | Revisá la conexión, las reglas publicadas y los permisos del módulo para ese usuario. |

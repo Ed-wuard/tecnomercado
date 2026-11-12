@@ -2,8 +2,37 @@
   "use strict";
 
   const STORE_KEY = "tecnomercado-stock-v1";
-  const SESSION_KEY = "tecnomercado-session-user";
   const LOW_STOCK_THRESHOLD = 700;
+  const firebaseConfig = window.firebaseConfig || {};
+  const firebaseConfigured = ["apiKey", "authDomain", "projectId", "appId"].every(key => Boolean(firebaseConfig[key]));
+  const bootstrapAdminEmail = String(window.firebaseBootstrapAdminEmail || "").toLowerCase();
+  let firebaseApp = null;
+  let firebaseAuth = null;
+  let firebaseDb = null;
+  let userManagementAuth = null;
+  let cloudRevision = null;
+  let cloudStateUnsubscribe = null;
+  let cloudAuditUnsubscribe = null;
+  let localStateDirty = false;
+  let cloudPendingWrites = 0;
+  let cloudSaveQueue = Promise.resolve();
+  let pendingAudit = [];
+  let firebaseStartupError = "";
+  if (firebaseConfigured && window.firebase) {
+    try {
+      firebaseApp = window.firebase.initializeApp(firebaseConfig);
+      firebaseAuth = firebaseApp.auth();
+      firebaseDb = firebaseApp.firestore();
+      firebaseDb.settings({ ignoreUndefinedProperties: true });
+    } catch (error) {
+      firebaseStartupError = error.message || "No se pudo inicializar Firebase.";
+      console.error("No se pudo inicializar Firebase.", error);
+    }
+  } else {
+    firebaseStartupError = firebaseConfigured
+      ? "No se cargó el SDK de Firebase. Revisá la conexión a Internet."
+      : "Completá la configuración web de Firebase en firebase-config.js.";
+  }
   const permissionModules = {
     dashboard: "Panel general", inventory: "Inventario", production: "Recetas y producción",
     dailyAssembly: "Producción diaria: armado", dailyMachining: "Producción diaria: mecanizado",
@@ -23,11 +52,12 @@
     products: [],
     boms: [],
     orders: [],
+    invoices: [],
     suppliers: [],
     movements: [],
     dailyProduction: [],
     users: [
-      { id: "u-1", name: "Jorge Méndez", role: "Administrador", createdAt: new Date().toISOString(), active: true },
+      { id: "u-1", name: "Jorge Jimenez", role: "Administrador", createdAt: new Date().toISOString(), active: true },
       { id: "u-2", name: "Lucía Fernández", role: "Producción", createdAt: new Date(Date.now() - 86400000 * 12).toISOString(), active: true },
       { id: "u-3", name: "Martín Ríos", role: "Depósito", createdAt: new Date(Date.now() - 86400000 * 24).toISOString(), active: true }
     ],
@@ -37,7 +67,7 @@
   let state = loadState();
   let sortState = { key: "name", direction: 1 };
   const modalInstances = {};
-  ["productModal", "movementModal", "bomModal", "produceModal", "categoryModal", "userModal", "orderModal", "supplierModal"].forEach(id => {
+  ["productModal", "movementModal", "bomModal", "produceModal", "invoiceModal", "categoryModal", "userModal", "orderModal", "supplierModal"].forEach(id => {
     modalInstances[id] = new bootstrap.Modal(document.getElementById(id));
   });
 
@@ -54,7 +84,7 @@
         loaded.authVersion = 1;
       }
       loaded.dailyProduction = Array.isArray(loaded.dailyProduction) ? loaded.dailyProduction : [];
-      loaded.currentUserId = sessionStorage.getItem(SESSION_KEY) || "";
+      loaded.currentUserId = "";
       loaded.categories = Array.isArray(loaded.categories) ? loaded.categories : [];
       defaultData.categories.forEach(category => {
         if (!loaded.categories.some(item => item.name.toLowerCase() === category.name.toLowerCase())) loaded.categories.push(structuredClone(category));
@@ -62,6 +92,7 @@
       loaded.products = Array.isArray(loaded.products) ? loaded.products : [];
       loaded.boms = Array.isArray(loaded.boms) ? loaded.boms : [];
       loaded.orders = Array.isArray(loaded.orders) ? loaded.orders : [];
+      loaded.invoices = Array.isArray(loaded.invoices) ? loaded.invoices : [];
       loaded.suppliers = Array.isArray(loaded.suppliers) ? loaded.suppliers : [];
       const ensureSupplier = (name, leadTimeDays = null) => {
         const supplierName = String(name || "").trim();
@@ -193,21 +224,49 @@
     }
   }
   function saveState() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-    catch (error) { console.error("No se pudieron guardar los cambios.", error); toast("No se pudieron guardar los cambios en este dispositivo.", "error"); }
+    const data = cloudStateData();
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...data, users: [], audit: [], currentUserId: "" })); }
+    catch (error) { console.error("No se pudo guardar la copia local.", error); toast("No se pudo guardar la copia local de los datos.", "error"); }
+    if (!firebaseAuth?.currentUser || !firebaseDb || cloudRevision === null) return false;
+    cloudPendingWrites++;
+    localStateDirty = true;
+    const stateRef = firebaseDb.collection("appData").doc("state");
+    const operation = cloudSaveQueue.then(async () => {
+      const currentData = cloudStateData();
+      const records = [...pendingAudit];
+      return firebaseDb.runTransaction(async transaction => {
+        const snapshot = await transaction.get(stateRef);
+        if (!snapshot.exists) throw new Error("No se encontró el estado remoto. Volvé a iniciar sesión.");
+        const currentRevision = Number(snapshot.get("revision") || 0);
+        if (currentRevision !== cloudRevision) throw new Error("Otra sesión modificó los datos. Se actualizará la pantalla; volvé a intentar la operación.");
+        const nextRevision = currentRevision + 1;
+        transaction.set(stateRef, { ...currentData, revision: nextRevision });
+        records.forEach(record => transaction.set(firebaseDb.collection("auditLogs").doc(record.id), record));
+        return { nextRevision, records };
+      });
+    }).then(({ nextRevision, records }) => {
+      cloudRevision = nextRevision;
+      pendingAudit = pendingAudit.filter(record => !records.some(saved => saved.id === record.id));
+      return true;
+    }).catch(async error => {
+      console.error("No se pudieron sincronizar los cambios con Firestore.", error);
+      toast(`No se guardaron los cambios en Firestore: ${error.message || "error de conexión"}`, "error");
+      pendingAudit = [];
+      await reloadCloudState();
+      return false;
+    }).finally(() => {
+      cloudPendingWrites = Math.max(0, cloudPendingWrites - 1);
+      localStateDirty = cloudPendingWrites > 0;
+    });
+    cloudSaveQueue = operation.catch(() => {});
+    return operation;
+  }
+  function cloudStateData() {
+    const { users, currentUserId, audit, authVersion, ...data } = state;
+    return structuredClone(data);
   }
   function id(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
   function currentUser() { return state.users.find(user => user.id === state.currentUserId && user.active) || null; }
-  async function passwordHash(password, salt) {
-    if (!window.crypto?.subtle) throw new Error("Este navegador no permite configurar contraseñas en este contexto.");
-    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-    const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: Uint8Array.from(salt.match(/../g), value => parseInt(value, 16)), iterations: 210000, hash: "SHA-256" }, key, 256);
-    return Array.from(new Uint8Array(bits), value => value.toString(16).padStart(2, "0")).join("");
-  }
-  async function newPasswordCredential(password) {
-    const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join("");
-    return { salt, hash: await passwordHash(password, salt) };
-  }
   function canView(module) {
     const user = currentUser();
     if (!user) return false;
@@ -261,7 +320,9 @@
     return false;
   }
   function audit(action, detail) {
-    state.audit.unshift({ id: id("a"), date: new Date().toISOString(), user: currentUser()?.name || "Usuario", action, detail });
+    const record = { id: id("a"), date: new Date().toISOString(), user: currentUser()?.name || "Usuario", action, detail };
+    state.audit.unshift(record);
+    pendingAudit.unshift(record);
   }
   function toast(message, type = "success") {
     const element = document.createElement("div");
@@ -541,7 +602,7 @@
     document.getElementById("dailyPendingEmpty").classList.toggle("d-none", pending.length > 0);
   }
   function renderUsers() {
-    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions">${user.role !== "Administrador" ? `<button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="Editar permisos" aria-label="Editar permisos"><i class="bi bi-pencil"></i></button>${user.active ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash"></i></button>` : ""}` : ""}</div></td></tr>`).join("");
+    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions"><button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}" aria-label="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}"><i class="bi bi-pencil"></i></button>${user.role !== "Administrador" && user.active ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash"></i></button>` : ""}</div></td></tr>`).join("");
     document.getElementById("auditRows").innerHTML = state.audit.slice(0, 20).map(item => `<tr><td>${fmtDate(item.date, true)}</td><td>${escapeHtml(item.user)}</td><td><span class="audit-action">${escapeHtml(item.action)}</span></td><td class="audit-details">${escapeHtml(item.detail)}</td></tr>`).join("");
     document.getElementById("auditEmpty").classList.toggle("d-none", state.audit.length > 0);
   }
@@ -567,6 +628,7 @@
     document.querySelectorAll('[data-action="export-bom"],[data-action="print-bom"]').forEach(button => button.classList.toggle("d-none", !canView("production")));
     document.querySelectorAll('[data-action="export-movements"],[data-action="print-movements"]').forEach(button => button.classList.toggle("d-none", !canView("movements")));
     document.querySelectorAll('[data-action="export-audit"]').forEach(button => button.classList.toggle("d-none", !allowed("admin")));
+    document.querySelectorAll('[data-action="create-invoice"]').forEach(button => button.classList.toggle("d-none", !allowed("movement")));
     document.getElementById("importDrop").closest(".report-card").classList.toggle("d-none", !canEdit("inventory"));
     document.querySelector(".notification-btn").classList.toggle("d-none", !canView("inventory"));
     document.querySelectorAll(".side-nav .nav-link").forEach(button => {
@@ -682,6 +744,34 @@
     document.getElementById("movementQty").required = true;
     document.getElementById("movementQtyLabel").textContent = "Cantidad *";
     modalInstances.movementModal.show();
+  }
+  function addInvoiceLine() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "invoice-line";
+    const options = state.boms.map(bom => `<option value="${escapeHtml(bom.id)}">${escapeHtml(bom.name)} (${escapeHtml(bom.sku)}) · Stock: ${hasStockValue(bom) ? `${fmtNum(bom.stock)} ${escapeHtml(bom.unit || "u")}` : "Pendiente"}</option>`).join("");
+    wrapper.innerHTML = `<select class="form-select invoice-product" required aria-label="Producto de salida"><option value="">Seleccionar producto terminado...</option>${options}</select><input class="form-control invoice-qty" type="number" min="1" step="1" required placeholder="Cantidad" aria-label="Cantidad"><button type="button" class="icon-btn remove-invoice-line" aria-label="Quitar producto"><i class="bi bi-trash3"></i></button>`;
+    wrapper.querySelector(".remove-invoice-line").addEventListener("click", () => wrapper.remove());
+    document.getElementById("invoiceLines").append(wrapper);
+  }
+  function openInvoice() {
+    if (!requirePermission("movement")) return;
+    if (!state.boms.length) { toast("No hay productos compuestos para incluir en la factura.", "error"); return; }
+    document.getElementById("invoiceForm").reset();
+    document.getElementById("invoiceLines").innerHTML = "";
+    document.getElementById("invoiceDate").value = localDateKey(new Date());
+    addInvoiceLine();
+    modalInstances.invoiceModal.show();
+  }
+  function printInvoice(invoice, invoiceWindow) {
+    if (!invoiceWindow) {
+      toast("Factura generada y stock descontado. Permití las ventanas emergentes para imprimir el comprobante.", "error");
+      return false;
+    }
+    const rows = invoice.lines.map(line => `<tr><td>${escapeHtml(line.sku)}</td><td>${escapeHtml(line.name)}</td><td>${fmtNum(line.qty)} ${escapeHtml(line.unit)}</td></tr>`).join("");
+    invoiceWindow.document.open();
+    invoiceWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Factura de salida ${escapeHtml(invoice.number)}</title><style>body{font:14px Arial,sans-serif;color:#202940;margin:40px auto;max-width:800px}header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #29334b;padding-bottom:18px}h1{font-size:24px;margin:0 0 7px}.muted{color:#687287;font-size:12px}table{width:100%;border-collapse:collapse;margin:28px 0}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #dfe3e9}th{font-size:11px;color:#687287;text-transform:uppercase}.qty{text-align:right}footer{margin-top:42px;border-top:1px solid #dfe3e9;padding-top:12px;color:#687287;font-size:11px}@media print{body{margin:20mm auto}}</style></head><body><header><div><h1>Factura de salida</h1><div class="muted">Comprobante de despacho de productos terminados</div></div><div><strong>${escapeHtml(invoice.number)}</strong><div class="muted">${fmtDate(invoice.date)}</div></div></header><p><strong>Cliente / destinatario:</strong> ${escapeHtml(invoice.customer || "No especificado")}</p><table><thead><tr><th>SKU</th><th>Producto</th><th class="qty">Cantidad</th></tr></thead><tbody>${rows}</tbody></table><p><strong>Total de unidades:</strong> ${fmtNum(invoice.lines.reduce((sum, line) => sum + line.qty, 0))}</p><footer>Generada por ${escapeHtml(invoice.user)} · Documento de salida de inventario; no incluye importes ni impuestos.</footer><script>window.onload=function(){window.print()}</script></body></html>`);
+    invoiceWindow.document.close();
+    return true;
   }
   function addComponentRow(productId = "", qty = 1, sourceName = "", sourceSku = "") {
     const wrapper = document.createElement("div");
@@ -952,78 +1042,240 @@
       window.setTimeout(() => view.classList.remove("print-active"), 500);
     }, 100);
   }
-  function switchUser() {
-    if (currentUser()) { audit("Cierre de sesión", currentUser().name); saveState(); }
-    sessionStorage.removeItem(SESSION_KEY);
-    state.currentUserId = "";
+  async function switchUser() {
+    if (currentUser()) {
+      audit("Cierre de sesión", currentUser().name);
+      await saveState();
+    }
     document.getElementById("loginForm").reset();
-    document.getElementById("appShell").hidden = true;
-    document.getElementById("loginScreen").hidden = false;
-    document.getElementById("loginPassword").focus();
+    try { await firebaseAuth?.signOut(); }
+    catch (error) {
+      console.error("No se pudo cerrar la sesión de Firebase.", error);
+      toast(`No se pudo cerrar sesión: ${cloudErrorMessage(error)}`, "error");
+    }
   }
   function updateLoginScreen() {
-    const admin = state.users.find(user => user.role === "Administrador");
-    const setup = !admin?.credential;
-    document.getElementById("loginTitle").textContent = setup ? "Configurar administrador" : "Iniciar sesión";
-    document.getElementById("loginSubtitle").textContent = setup ? "Creá la contraseña inicial de la cuenta administrador." : "Ingresá con tu usuario y contraseña.";
-    document.getElementById("loginUsername").value = setup ? "administrador" : "";
-    document.getElementById("loginUsername").readOnly = setup;
-    document.getElementById("loginConfirmWrap").classList.toggle("d-none", !setup);
-    document.getElementById("loginConfirm").required = setup;
-    document.getElementById("loginPassword").autocomplete = setup ? "new-password" : "current-password";
-    document.getElementById("loginSubmit").textContent = setup ? "Crear contraseña e ingresar" : "Ingresar";
+    document.getElementById("loginTitle").textContent = "Iniciar sesión";
+    document.getElementById("loginSubtitle").textContent = "Ingresá con el correo y la contraseña de Firebase Authentication.";
+    document.getElementById("loginPassword").autocomplete = "current-password";
+    document.getElementById("loginSubmit").textContent = "Ingresar";
+    document.getElementById("loginSubmit").disabled = !firebaseAuth || Boolean(firebaseStartupError);
+    document.getElementById("resetPassword").disabled = !firebaseAuth || Boolean(firebaseStartupError);
+    if (firebaseStartupError) {
+      const error = document.getElementById("loginError");
+      error.textContent = firebaseStartupError;
+      error.classList.remove("d-none");
+    }
+  }
+  function cloudErrorMessage(error) {
+    const messages = {
+      "auth/invalid-credential": "Correo o contraseña incorrectos.",
+      "auth/invalid-email": "Ingresá un correo electrónico válido.",
+      "auth/too-many-requests": "Hubo demasiados intentos. Esperá unos minutos e intentá de nuevo.",
+      "auth/network-request-failed": "No se pudo conectar. Revisá tu conexión a Internet.",
+      "auth/email-already-in-use": "Ese correo ya tiene una cuenta en Firebase Authentication.",
+      "auth/weak-password": "La contraseña debe tener al menos 8 caracteres.",
+      "auth/operation-not-allowed": "Activá Email/Password en los proveedores de Firebase Authentication."
+    };
+    return messages[error.code] || error.message || "No se pudo completar la operación con Firebase.";
+  }
+  function showApplication() {
+    setViewTextDefaults();
+    document.getElementById("loginScreen").hidden = true;
+    document.getElementById("appShell").hidden = false;
+    render();
+    document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
+    const firstView = ["dashboard", "daily", "inventory", "production", "calculator", "movements", "orders", "categories", "suppliers", "reports"].find(canView);
+    if (firstView) showView(firstView);
+  }
+  async function loadCloudState() {
+    const stateSnapshot = await firebaseDb.collection("appData").doc("state").get();
+    if (!stateSnapshot.exists) throw new Error("No se encontró el inventario en Firestore.");
+    const data = stateSnapshot.data();
+    const users = state.users;
+    const auditRecords = state.audit;
+    const currentUserId = state.currentUserId;
+    state = { ...structuredClone(defaultData), ...data, users, audit: auditRecords, currentUserId };
+    cloudRevision = Number(data.revision || 0);
+    return stateSnapshot;
+  }
+  async function reloadCloudState() {
+    if (!firebaseAuth?.currentUser || !firebaseDb) return;
+    try {
+      await loadCloudState();
+      if (currentUser()?.role === "Administrador") {
+        const logs = await firebaseDb.collection("auditLogs").orderBy("date", "desc").limit(200).get();
+        state.audit = logs.docs.map(document => document.data());
+      }
+      render();
+    } catch (error) {
+      console.error("No se pudo recargar el estado remoto.", error);
+      toast(`No se pudo actualizar desde Firestore: ${cloudErrorMessage(error)}`, "error");
+    }
+  }
+  function subscribeToCloudState() {
+    cloudStateUnsubscribe?.();
+    cloudAuditUnsubscribe?.();
+    cloudStateUnsubscribe = firebaseDb.collection("appData").doc("state").onSnapshot(snapshot => {
+      if (!snapshot.exists || localStateDirty) return;
+      const data = snapshot.data();
+      const revision = Number(data.revision || 0);
+      if (cloudRevision !== null && revision > cloudRevision) {
+        const users = state.users, auditRecords = state.audit, currentUserId = state.currentUserId;
+        state = { ...structuredClone(defaultData), ...data, users, audit: auditRecords, currentUserId };
+        cloudRevision = revision;
+        render();
+      }
+    }, error => {
+      console.error("No se pudo recibir la sincronización de Firestore.", error);
+      toast(`Se perdió la sincronización en tiempo real: ${cloudErrorMessage(error)}`, "error");
+    });
+    if (currentUser()?.role === "Administrador") {
+      cloudAuditUnsubscribe = firebaseDb.collection("auditLogs").orderBy("date", "desc").limit(200).onSnapshot(snapshot => {
+        state.audit = snapshot.docs.map(document => document.data());
+        renderUsers();
+      }, error => {
+        console.error("No se pudo sincronizar la auditoría.", error);
+        toast(`No se pudo cargar la auditoría: ${cloudErrorMessage(error)}`, "error");
+      });
+    }
+  }
+  async function activateCloudUser(authUser) {
+    const profileRef = firebaseDb.collection("users").doc(authUser.uid);
+    let profileSnapshot = await profileRef.get();
+    if (!profileSnapshot.exists && String(authUser.email || "").toLowerCase() === bootstrapAdminEmail) {
+      const profile = {
+        id: authUser.uid,
+        email: authUser.email,
+        username: authUser.email,
+        name: "Jorge Jimenez",
+        role: "Administrador",
+        permissions: {},
+        createdAt: new Date().toISOString(),
+        active: true
+      };
+      await profileRef.set(profile);
+      profileSnapshot = await profileRef.get();
+    }
+    if (!profileSnapshot.exists) throw new Error("Tu cuenta todavía no tiene un perfil asignado por el Administrador.");
+    const profile = { id: authUser.uid, ...profileSnapshot.data() };
+    if (!profile.active) throw new Error("Tu acceso fue desactivado. Contactá al Administrador.");
+    if (authUser.email && profile.email !== authUser.email) {
+      await profileRef.update({ email: authUser.email, username: authUser.email });
+      profile.email = authUser.email;
+      profile.username = authUser.email;
+    }
+    state.currentUserId = authUser.uid;
+    state.users = profile.role === "Administrador"
+      ? (await firebaseDb.collection("users").get()).docs.map(document => ({ id: document.id, ...document.data() }))
+      : [profile];
+    const stateSnapshot = await firebaseDb.collection("appData").doc("state").get();
+    if (!stateSnapshot.exists) {
+      if (profile.role !== "Administrador") throw new Error("El inventario todavía no fue inicializado por el Administrador.");
+      const migratedData = cloudStateData();
+      const newRevision = 1;
+      await firebaseDb.collection("appData").doc("state").set({ ...migratedData, revision: newRevision });
+      cloudRevision = newRevision;
+    } else {
+      await loadCloudState();
+    }
+    if (profile.role === "Administrador") {
+      const logs = await firebaseDb.collection("auditLogs").orderBy("date", "desc").limit(200).get();
+      state.audit = logs.docs.map(document => document.data());
+    } else state.audit = [];
+    pendingAudit = [];
+    localStateDirty = false;
+    const data = cloudStateData();
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...data, users: [], audit: [], currentUserId: "" })); }
+    catch (error) {
+      console.error("No se pudo actualizar la copia local.", error);
+      toast("No se pudo actualizar la copia local; los datos siguen en Firestore.", "error");
+    }
+    audit("Inicio de sesión", profile.name);
+    showApplication();
+    saveState();
+    subscribeToCloudState();
+  }
+  function handleAuthState(authUser) {
+    cloudStateUnsubscribe?.();
+    cloudAuditUnsubscribe?.();
+    cloudStateUnsubscribe = null;
+    cloudAuditUnsubscribe = null;
+    if (!authUser) {
+      cloudRevision = null;
+      state.currentUserId = "";
+      document.getElementById("appShell").hidden = true;
+      document.getElementById("loginScreen").hidden = false;
+      updateLoginScreen();
+      return;
+    }
+    activateCloudUser(authUser).catch(async error => {
+      console.error("No se pudo cargar el perfil o los datos de Firestore.", error);
+      const loginError = document.getElementById("loginError");
+      loginError.textContent = cloudErrorMessage(error);
+      loginError.classList.remove("d-none");
+      await firebaseAuth.signOut();
+    });
   }
   function openUser(userId = "") {
     if (!requirePermission("admin")) return;
-    const user = state.users.find(item => item.id === userId && item.role !== "Administrador");
+    const user = state.users.find(item => item.id === userId);
+    const isAdministrator = user?.role === "Administrador";
     const form = document.getElementById("userForm");
     form.reset();
     form.dataset.userId = user?.id || "";
-    document.getElementById("userModalTitle").textContent = user ? "Editar usuario" : "Agregar usuario";
+    document.getElementById("userModalTitle").textContent = isAdministrator ? "Editar datos del administrador" : user ? "Editar usuario" : "Agregar usuario";
     document.getElementById("userName").value = user?.name || "";
-    document.getElementById("userLogin").value = user?.username || "";
+    document.getElementById("userLogin").value = user?.email || user?.username || "";
+    document.getElementById("userLogin").readOnly = Boolean(user);
     document.getElementById("userRole").value = user?.role || "Producción";
+    document.getElementById("userRole").disabled = isAdministrator;
+    document.getElementById("userRoleWrap").classList.toggle("d-none", isAdministrator);
+    document.getElementById("userPermissionsWrap").classList.toggle("d-none", isAdministrator);
+    document.getElementById("userPasswordWrap").classList.toggle("d-none", Boolean(user));
+    document.getElementById("adminProfileHint").classList.toggle("d-none", !isAdministrator);
+    document.getElementById("editUserAuthHint").classList.toggle("d-none", !user || isAdministrator);
     document.getElementById("userPassword").required = !user;
-    document.getElementById("userPassword").placeholder = user ? "Dejar vacía para conservarla" : "Mínimo 8 caracteres";
+    document.getElementById("userPassword").value = "";
+    document.getElementById("userPassword").placeholder = "Mínimo 8 caracteres";
     document.getElementById("permissionRows").innerHTML = Object.entries(permissionModules).map(([key, label]) => `<tr><td>${escapeHtml(label)}</td><td><input type="checkbox" class="form-check-input permission-view" data-module="${key}" aria-label="Ver ${escapeHtml(label)}" ${user?.permissions?.[key]?.view ? "checked" : ""}></td><td><input type="checkbox" class="form-check-input permission-edit" data-module="${key}" aria-label="Modificar ${escapeHtml(label)}" ${user?.permissions?.[key]?.edit ? "checked" : ""}></td></tr>`).join("");
     modalInstances.userModal.show();
   }
   document.getElementById("loginForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const admin = state.users.find(user => user.role === "Administrador");
-    const username = document.getElementById("loginUsername").value.trim().toLowerCase();
+    const email = document.getElementById("loginUsername").value.trim().toLowerCase();
     const password = document.getElementById("loginPassword").value;
     const error = document.getElementById("loginError");
     const submit = document.getElementById("loginSubmit");
     error.classList.add("d-none");
     submit.disabled = true;
     try {
-      if (!admin?.credential) {
-        if (!admin || password !== document.getElementById("loginConfirm").value) throw new Error("Las contraseñas no coinciden.");
-        admin.credential = await newPasswordCredential(password);
-      }
-      const user = state.users.find(item => item.active && item.username?.toLowerCase() === username);
-      if (!user?.credential || await passwordHash(password, user.credential.salt) !== user.credential.hash) throw new Error("Usuario o contraseña incorrectos.");
-      state.currentUserId = user.id;
-      sessionStorage.setItem(SESSION_KEY, user.id);
-      audit("Inicio de sesión", user.name);
-      saveState();
-      document.getElementById("loginForm").reset();
-      document.getElementById("loginScreen").hidden = true;
-      document.getElementById("appShell").hidden = false;
-      setViewTextDefaults(); render();
-      document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
-      const firstView = ["dashboard", "daily", "inventory", "production", "calculator", "movements", "orders", "categories", "suppliers", "reports"].find(canView);
-      if (firstView) showView(firstView);
-      else toast("Tu cuenta aún no tiene módulos habilitados.", "error");
-      updateLoginScreen();
+      if (!firebaseAuth) throw new Error(firebaseStartupError || "Firebase no está configurado.");
+      await firebaseAuth.signInWithEmailAndPassword(email, password);
     } catch (failure) {
-      error.textContent = failure.message || "No se pudo iniciar sesión.";
+      error.textContent = cloudErrorMessage(failure);
       error.classList.remove("d-none");
-    } finally { submit.disabled = false; }
+    } finally { submit.disabled = Boolean(firebaseStartupError); }
+  });
+  document.getElementById("resetPassword").addEventListener("click", async () => {
+    const email = document.getElementById("loginUsername").value.trim().toLowerCase();
+    const error = document.getElementById("loginError");
+    error.classList.add("d-none");
+    if (!email) {
+      error.textContent = "Ingresá tu correo electrónico y volvé a tocar «Olvidé mi contraseña».";
+      error.classList.remove("d-none");
+      return;
+    }
+    try {
+      await firebaseAuth.sendPasswordResetEmail(email);
+      toast("Si el correo está registrado, recibirás instrucciones para restablecer la contraseña.");
+    } catch (failure) {
+      error.textContent = cloudErrorMessage(failure);
+      error.classList.remove("d-none");
+    }
   });
 
-  document.addEventListener("click", event => {
+  document.addEventListener("click", async event => {
     const viewButton = event.target.closest("[data-view]");
     if (viewButton) { showView(viewButton.dataset.view); return; }
     const actionButton = event.target.closest("[data-action]");
@@ -1116,7 +1368,14 @@
       if (!requirePermission("admin")) return;
       const user = state.users.find(item => item.id === itemId);
       if (user && user.role !== "Administrador" && user.id !== state.currentUserId && window.confirm(`¿Desactivar el acceso de ${user.name}?`)) {
-        user.active = false; audit("Usuario desactivado", `${user.name} (${user.role})`); saveState(); render(); toast("Usuario desactivado.");
+        try {
+          await firebaseDb.collection("users").doc(user.id).update({ active: false });
+          user.active = false;
+          audit("Usuario desactivado", `${user.name} (${user.role})`); saveState(); render(); toast("Usuario desactivado.");
+        } catch (error) {
+          console.error("No se pudo desactivar el usuario.", error);
+          toast(`No se pudo desactivar el usuario: ${cloudErrorMessage(error)}`, "error");
+        }
       }
     }
     if (action === "export-inventory" && canView("inventory")) exportInventory();
@@ -1128,6 +1387,7 @@
     if (action === "print-inventory" && canView("inventory")) printReport("inventory");
     if (action === "print-bom" && canView("production")) printReport("bom");
     if (action === "print-movements" && canView("movements")) printReport("movements");
+    if (action === "create-invoice") openInvoice();
   });
 
   document.getElementById("productForm").addEventListener("submit", event => {
@@ -1321,6 +1581,46 @@
     audit("Producción registrada", `${qty} × ${bom.name}`);
     saveState(); render(); modalInstances.produceModal.hide(); toast(`Producción de ${qty} ${qty === 1 ? "unidad" : "unidades"} registrada.`);
   });
+  document.getElementById("addInvoiceLine").addEventListener("click", addInvoiceLine);
+  document.getElementById("invoiceForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!requirePermission("movement")) return;
+    const date = document.getElementById("invoiceDate").value;
+    const lines = [...document.querySelectorAll(".invoice-line")].map(row => ({
+      bom: state.boms.find(item => item.id === row.querySelector(".invoice-product").value),
+      qty: Number(row.querySelector(".invoice-qty").value)
+    }));
+    if (!date || !lines.length || lines.some(line => !line.bom || !Number.isInteger(line.qty) || line.qty < 1)) {
+      toast("Seleccioná al menos un producto e ingresá cantidades enteras mayores a cero.", "error");
+      return;
+    }
+    const quantities = new Map();
+    lines.forEach(({ bom, qty }) => quantities.set(bom, (quantities.get(bom) || 0) + qty));
+    for (const [bom, qty] of quantities) {
+      if (!hasStockValue(bom)) { toast(`El stock de ${bom.name} está pendiente de carga.`, "error"); return; }
+      if (Number(bom.stock) < qty) { toast(`Stock insuficiente de ${bom.name}. Disponible: ${fmtNum(bom.stock)} ${bom.unit || "u"}.`, "error"); return; }
+    }
+    const sequence = state.invoices.filter(invoice => invoice.date === date).length + 1;
+    const invoice = {
+      id: id("invoice"),
+      number: `FS-${date.replace(/-/g, "")}-${String(sequence).padStart(3, "0")}`,
+      date,
+      createdAt: new Date().toISOString(),
+      customer: document.getElementById("invoiceCustomer").value.trim(),
+      user: currentUser().name,
+      lines: lines.map(({ bom, qty }) => ({ productId: bom.productId, sku: bom.sku, name: bom.name, qty, unit: bom.unit || "u" }))
+    };
+    const invoiceWindow = window.open("", "_blank");
+    if (!invoiceWindow) { toast("Permití las ventanas emergentes para imprimir la factura; no se descontó stock.", "error"); return; }
+    quantities.forEach((qty, bom) => registerMovement(bom, "salida", qty, `Factura de salida ${invoice.number}`));
+    state.invoices.unshift(invoice);
+    audit("Factura de salida generada", `${invoice.number} · ${invoice.lines.map(line => `${line.qty} × ${line.name}`).join(", ")}`);
+    const saved = await saveState();
+    if (!saved) { invoiceWindow?.close(); return; }
+    render();
+    modalInstances.invoiceModal.hide();
+    if (printInvoice(invoice, invoiceWindow)) toast(`Factura ${invoice.number} generada y stock descontado.`);
+  });
   document.getElementById("dailyAssemblyForm").addEventListener("submit", event => {
     event.preventDefault();
     if (!requirePermission("dailyAssembly")) return;
@@ -1401,18 +1701,52 @@
     if (!requirePermission("admin")) return;
     const userId = event.currentTarget.dataset.userId;
     const name = document.getElementById("userName").value.trim();
-    const username = document.getElementById("userLogin").value.trim();
+    const email = document.getElementById("userLogin").value.trim().toLowerCase();
     const password = document.getElementById("userPassword").value;
-    if (!name || !username || (!userId && password.length < 8) || (password && password.length < 8)) { toast("Completá nombre, usuario y contraseña de al menos 8 caracteres.", "error"); return; }
-    if (state.users.some(user => user.username?.toLowerCase() === username.toLowerCase() && user.id !== userId)) { toast("Ya existe un usuario con ese nombre de acceso.", "error"); return; }
-    const permissions = Object.fromEntries(Object.keys(permissionModules).map(key => [key, { view: document.querySelector(`.permission-view[data-module="${key}"]`).checked, edit: document.querySelector(`.permission-edit[data-module="${key}"]`).checked }]));
+    if (!name || !email || (!userId && password.length < 8)) { toast("Completá el nombre, un correo válido y una contraseña de al menos 8 caracteres.", "error"); return; }
+    if (state.users.some(user => (user.email || user.username)?.toLowerCase() === email && user.id !== userId)) { toast("Ya existe un usuario con ese correo.", "error"); return; }
+    const user = state.users.find(item => item.id === userId);
+    const isAdministrator = user?.role === "Administrador";
+    const permissions = isAdministrator ? user.permissions : Object.fromEntries(Object.keys(permissionModules).map(key => [key, { view: document.querySelector(`.permission-view[data-module="${key}"]`).checked, edit: document.querySelector(`.permission-edit[data-module="${key}"]`).checked }]));
     try {
-      const credential = password ? await newPasswordCredential(password) : null;
-      const user = state.users.find(item => item.id === userId && item.role !== "Administrador");
-      if (user) Object.assign(user, { name, username, role: document.getElementById("userRole").value, permissions, ...(credential ? { credential } : {}) });
-      else state.users.push({ id: id("u"), name, username, role: document.getElementById("userRole").value, permissions, credential, createdAt: new Date().toISOString(), active: true });
-      audit(user ? "Usuario actualizado" : "Usuario creado", `${name} (${username})`); saveState(); render(); modalInstances.userModal.hide(); toast("Usuario guardado.");
-    } catch (error) { toast("No se pudo configurar la contraseña del usuario.", "error"); }
+      if (user) {
+        const updates = isAdministrator ? { name } : { name, role: document.getElementById("userRole").value, permissions };
+        await firebaseDb.collection("users").doc(user.id).update(updates);
+        Object.assign(user, updates);
+        if (isAdministrator && firebaseAuth.currentUser) await firebaseAuth.currentUser.updateProfile({ displayName: name });
+      } else {
+        if (!userManagementAuth) {
+          let userManagementApp;
+          try { userManagementApp = window.firebase.app("userManagement"); }
+          catch { userManagementApp = window.firebase.initializeApp(firebaseConfig, "userManagement"); }
+          userManagementAuth = userManagementApp.auth();
+        }
+        const credential = await userManagementAuth.createUserWithEmailAndPassword(email, password);
+        const newUser = {
+          id: credential.user.uid,
+          email,
+          username: email,
+          name,
+          role: document.getElementById("userRole").value,
+          permissions,
+          createdAt: new Date().toISOString(),
+          active: true
+        };
+        try {
+          await firebaseDb.collection("users").doc(newUser.id).set(newUser);
+        } catch (error) {
+          await userManagementAuth.signOut();
+          throw new Error(`La cuenta de Firebase se creó, pero no se pudo asignar el perfil. Eliminá la cuenta ${email} desde Firebase Authentication y volvé a intentar. ${cloudErrorMessage(error)}`);
+        }
+        await userManagementAuth.signOut();
+        state.users.push(newUser);
+      }
+      audit(isAdministrator ? "Datos del administrador actualizados" : user ? "Usuario actualizado" : "Usuario creado", `${name} (${email})`);
+      saveState(); render(); modalInstances.userModal.hide(); toast("Usuario guardado.");
+    } catch (error) {
+      console.error("No se pudo guardar el usuario en Firebase.", error);
+      toast(`No se pudo guardar el usuario: ${cloudErrorMessage(error)}`, "error");
+    }
   });
   document.getElementById("permissionRows").addEventListener("change", event => {
     const checkbox = event.target;
@@ -1465,19 +1799,6 @@
     const sidebar = document.getElementById("sidebar");
     if (window.innerWidth <= 900 && sidebar.classList.contains("open") && !sidebar.contains(event.target) && !event.target.closest("#mobileMenu")) sidebar.classList.remove("open");
   });
-  window.addEventListener("storage", event => {
-    if (event.key === STORE_KEY) {
-      state = loadState();
-      if (!currentUser()) { switchUser(); updateLoginScreen(); return; }
-      render();
-      const active = document.querySelector(".view.active")?.id.replace("view-", "");
-      if (active && !(active === "users" ? allowed("admin") : canView(active))) {
-        document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
-        const firstView = Object.keys(permissionModules).find(canView);
-        if (firstView) showView(firstView.startsWith("daily") ? "daily" : firstView);
-      }
-    }
-  });
   document.getElementById("dailyDate").value = localDateKey(new Date());
   document.getElementById("dailyDate").max = localDateKey(new Date());
   document.getElementById("profileSwitch").title = "Cerrar sesión";
@@ -1486,16 +1807,6 @@
   setViewTextDefaults();
   saveState();
   updateLoginScreen();
-  if (currentUser() && currentUser().credential) {
-    document.getElementById("loginScreen").hidden = true;
-    document.getElementById("appShell").hidden = false;
-    render();
-    document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
-    const firstView = ["dashboard", "daily", "inventory", "production", "calculator", "movements", "orders", "categories", "suppliers", "reports"].find(canView);
-    if (firstView) showView(firstView);
-  } else {
-    sessionStorage.removeItem(SESSION_KEY);
-    state.currentUserId = "";
-  }
+  if (firebaseAuth) firebaseAuth.onAuthStateChanged(handleAuthState);
   window.setInterval(setViewTextDefaults, 60000);
 })();

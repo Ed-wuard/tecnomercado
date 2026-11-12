@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function profile() {
+      return get(profilePath()).data;
+    }
+
+    function activeUser() {
+      return hasProfile() && profile().active == true;
+    }
+
+    function isAdmin() {
+      return activeUser() && profile().role == 'Administrador';
+    }
+
+    function canEdit(module) {
+      return isAdmin() || (
+        activeUser() &&
+        profile().get('permissions', {}).get(module, {}).get('edit', false) == true
+      );
+    }
+
+    function canEditStock() {
+      return canEdit('inventory') ||
+        canEdit('production') ||
+        canEdit('movements') ||
+        canEdit('orders') ||
+        canEdit('dailyAssembly') ||
+        canEdit('dailyMachining');
+    }
+
+    match /users/{userId} {
+      allow read: if
+        (activeUser() && (request.auth.uid == userId || isAdmin())) ||
+        (signedIn() && request.auth.uid == userId &&
+          request.auth.token.email == 'kokitoga10@gmail.com');
+      allow create: if isAdmin() ||
+        (
+          signedIn() &&
+          request.auth.token.email == 'kokitoga10@gmail.com' &&
+          request.auth.uid == userId &&
+          request.resource.data.role == 'Administrador' &&
+          request.resource.data.active == true
+        );
+      allow update: if isAdmin() ||
+        (
+          activeUser() &&
+          request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'username']) &&
+          request.resource.data.email == request.auth.token.email &&
+          request.resource.data.username == request.auth.token.email
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /appData/state {
+      allow read: if activeUser();
+      allow create: if isAdmin();
+      allow update: if activeUser() &&
+        request.resource.data.keys().hasOnly([
+          'revision', 'categories', 'products', 'boms', 'orders', 'invoices',
+          'suppliers', 'movements', 'dailyProduction', 'recipeSeedsInitialized'
+        ]) &&
+        request.resource.data.revision == resource.data.revision + 1 &&
+        (
+          isAdmin() ||
+          (
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['products']) ||
+              canEditStock()) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['boms']) ||
+              canEdit('production') || canEdit('dailyAssembly') || canEdit('movements')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['orders']) ||
+              canEdit('orders')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['categories']) ||
+              canEdit('categories') || canEdit('inventory')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['suppliers']) ||
+              canEdit('suppliers')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dailyProduction']) ||
+              canEdit('dailyAssembly') || canEdit('dailyMachining')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['movements']) ||
+              canEditStock()) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['invoices']) ||
+              canEdit('movements')) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['recipeSeedsInitialized']) ||
+              isAdmin())
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /auditLogs/{auditId} {
+      allow read: if isAdmin();
+      allow create: if activeUser() &&
+        request.resource.data.keys().hasOnly(['id', 'date', 'user', 'action', 'detail']) &&
+        request.resource.data.user == profile().name;
+      allow update, delete: if false;
+    }
+  }
+}
