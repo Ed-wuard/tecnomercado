@@ -77,7 +77,7 @@
   let state = loadState();
   let sortState = { key: "name", direction: 1 };
   const modalInstances = {};
-  ["productModal", "movementModal", "bomModal", "produceModal", "invoiceModal", "categoryModal", "userModal", "orderModal", "supplierModal"].forEach(id => {
+  ["productModal", "movementModal", "bomModal", "produceModal", "invoiceModal", "categoryModal", "userModal", "passwordResetModal", "orderModal", "supplierModal"].forEach(id => {
     modalInstances[id] = new bootstrap.Modal(document.getElementById(id));
   });
 
@@ -612,7 +612,7 @@
     document.getElementById("dailyPendingEmpty").classList.toggle("d-none", pending.length > 0);
   }
   function renderUsers() {
-    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions"><button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}" aria-label="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}"><i class="bi bi-pencil"></i></button>${user.role !== "Administrador" && user.active && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="deactivate-user" data-id="${escapeHtml(user.id)}" title="Desactivar usuario" aria-label="Desactivar usuario"><i class="bi bi-person-dash"></i></button>` : ""}${user.role !== "Administrador" && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Eliminar usuario y liberar su correo" aria-label="Eliminar usuario y liberar su correo"><i class="bi bi-trash3"></i></button>` : ""}</div></td></tr>`).join("");
+    document.getElementById("userRows").innerHTML = state.users.map(user => `<tr><td><div class="product-name-cell"><span class="avatar">${escapeHtml(initials(user.name))}</span><span><span class="product-title">${escapeHtml(user.name)}</span><span class="product-code">${escapeHtml(user.username || "")} ${user.id === state.currentUserId ? "· Sesión activa" : ""}</span></span></div></td><td><span class="role-pill ${user.role}">${escapeHtml(roleNames[user.role] || user.role)}</span></td><td>${fmtDate(user.createdAt)}</td><td><span class="status-pill ${user.active ? "status-ok" : "status-out"}">${user.active ? "Activo" : "Inactivo"}</span></td><td><div class="row-actions"><button class="icon-btn" data-action="edit-user" data-id="${escapeHtml(user.id)}" title="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}" aria-label="${user.role === "Administrador" ? "Editar datos del administrador" : "Editar permisos"}"><i class="bi bi-pencil"></i></button>${user.role !== "Administrador" && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="send-user-password-reset" data-id="${escapeHtml(user.id)}" title="Enviar restablecimiento de contraseña" aria-label="Enviar restablecimiento de contraseña a ${escapeHtml(user.name)}"><i class="bi bi-envelope"></i></button><button class="icon-btn" data-action="toggle-user-status" data-id="${escapeHtml(user.id)}" title="${user.active ? "Desactivar usuario" : "Activar usuario"}" aria-label="${user.active ? "Desactivar usuario" : "Activar usuario"}"><i class="bi ${user.active ? "bi-person-dash" : "bi-person-check"}"></i></button>` : ""}${user.role !== "Administrador" && user.id !== state.currentUserId ? `<button class="icon-btn" data-action="delete-user" data-id="${escapeHtml(user.id)}" title="Eliminar usuario y liberar su correo" aria-label="Eliminar usuario y liberar su correo"><i class="bi bi-trash3"></i></button>` : ""}</div></td></tr>`).join("");
     document.getElementById("auditRows").innerHTML = state.audit.slice(0, 20).map(item => `<tr><td>${fmtDate(item.date, true)}</td><td>${escapeHtml(item.user)}</td><td><span class="audit-action">${escapeHtml(item.action)}</span></td><td class="audit-details">${escapeHtml(item.detail)}</td></tr>`).join("");
     document.getElementById("auditEmpty").classList.toggle("d-none", state.audit.length > 0);
   }
@@ -622,7 +622,7 @@
     document.querySelectorAll('[data-action="new-order"]').forEach(button => button.classList.toggle("d-none", !allowed("orders-create")));
     document.querySelectorAll('[data-action="new-bom"],[data-action="edit-bom"],[data-action="delete-bom"],[data-action="produce"]').forEach(button => button.classList.toggle("d-none", !allowed("production")));
     document.querySelectorAll('[data-action="new-category"],[data-action="edit-category"],[data-action="delete-category"]').forEach(button => button.classList.toggle("d-none", !allowed("categories")));
-    document.querySelectorAll('[data-action="new-user"],[data-action="edit-user"],[data-action="deactivate-user"],[data-action="delete-user"]').forEach(button => button.classList.toggle("d-none", !allowed("admin")));
+    document.querySelectorAll('[data-action="new-user"],[data-action="edit-user"],[data-action="send-user-password-reset"],[data-action="toggle-user-status"],[data-action="delete-user"]').forEach(button => button.classList.toggle("d-none", !allowed("admin")));
     document.querySelectorAll('[data-action="new-supplier"],[data-action="edit-supplier"]').forEach(button => button.classList.toggle("d-none", !allowed("suppliers")));
     document.getElementById("dailyAssemblyArea").classList.toggle("d-none", !canView("dailyAssembly"));
     document.getElementById("dailyMachiningArea").classList.toggle("d-none", !canView("dailyMachining"));
@@ -1100,11 +1100,11 @@
       "auth/email-already-in-use": "Ese correo ya tiene una cuenta en Firebase Authentication.",
       "auth/weak-password": "La contraseña debe tener al menos 8 caracteres.",
       "auth/operation-not-allowed": "Activá Email/Password en los proveedores de Firebase Authentication.",
-      "functions/not-found": "No se encontró la función para eliminar usuarios. Desplegá Firebase Functions y volvé a intentar."
+      "functions/not-found": "No se encontró la función de gestión de usuarios. Desplegá Firebase Functions y volvé a intentar."
     };
     const message = String(error.message || "").trim();
     if (error.code === "functions/internal" && /^internal(?:\s*\[\d*\s*\])?$/i.test(message)) {
-      return "Firebase no pudo ejecutar la eliminación. Verificá que deleteManagedUser esté desplegada en us-central1 y revisá los registros de Firebase Functions.";
+      return "Firebase no pudo ejecutar la operación de usuarios. Verificá que las funciones de gestión estén desplegadas en us-central1 y revisá los registros de Firebase Functions.";
     }
     return messages[error.code] || message || "No se pudo completar la operación con Firebase.";
   }
@@ -1270,6 +1270,16 @@
     document.getElementById("permissionRows").innerHTML = Object.entries(permissionModules).map(([key, label]) => `<tr><td>${escapeHtml(label)}</td><td><input type="checkbox" class="form-check-input permission-view" data-module="${key}" aria-label="Ver ${escapeHtml(label)}" ${user?.permissions?.[key]?.view ? "checked" : ""}></td><td><input type="checkbox" class="form-check-input permission-edit" data-module="${key}" aria-label="Modificar ${escapeHtml(label)}" ${user?.permissions?.[key]?.edit ? "checked" : ""}></td></tr>`).join("");
     modalInstances.userModal.show();
   }
+  function openPasswordReset(userId) {
+    if (!requirePermission("admin")) return;
+    const user = state.users.find(item => item.id === userId);
+    if (!user || user.role === "Administrador" || user.id === state.currentUserId) return;
+    const form = document.getElementById("passwordResetForm");
+    form.reset();
+    form.dataset.userId = user.id;
+    document.getElementById("passwordResetUser").textContent = `${user.name} (${user.email || user.username || "sin correo"})`;
+    modalInstances.passwordResetModal.show();
+  }
   document.getElementById("loginForm").addEventListener("submit", async event => {
     event.preventDefault();
     const email = document.getElementById("loginUsername").value.trim().toLowerCase();
@@ -1393,17 +1403,20 @@
     if (action === "edit-supplier") openSupplier(itemId);
     if (action === "new-user") openUser();
     if (action === "edit-user") openUser(itemId);
-    if (action === "deactivate-user") {
+    if (action === "send-user-password-reset") openPasswordReset(itemId);
+    if (action === "toggle-user-status") {
       if (!requirePermission("admin")) return;
       const user = state.users.find(item => item.id === itemId);
-      if (user && user.role !== "Administrador" && user.id !== state.currentUserId && window.confirm(`¿Desactivar el acceso de ${user.name}?`)) {
+      const active = !user?.active;
+      const actionLabel = active ? "activar" : "desactivar";
+      if (user && user.role !== "Administrador" && user.id !== state.currentUserId && window.confirm(`¿${active ? "Activar" : "Desactivar"} el acceso de ${user.name}?`)) {
         try {
-          await firebaseDb.collection("users").doc(user.id).update({ active: false });
-          user.active = false;
-          audit("Usuario desactivado", `${user.name} (${user.role})`); saveState(); render(); toast("Usuario desactivado.");
+          await firebaseDb.collection("users").doc(user.id).update({ active });
+          user.active = active;
+          audit(`Usuario ${active ? "activado" : "desactivado"}`, `${user.name} (${user.role})`); saveState(); render(); toast(`Usuario ${active ? "activado" : "desactivado"}.`);
         } catch (error) {
-          console.error("No se pudo desactivar el usuario.", error);
-          toast(`No se pudo desactivar el usuario: ${cloudErrorMessage(error)}`, "error");
+          console.error(`No se pudo ${actionLabel} el usuario.`, error);
+          toast(`No se pudo ${actionLabel} el usuario: ${cloudErrorMessage(error)}`, "error");
         }
       }
     }
@@ -1749,7 +1762,7 @@
     const name = document.getElementById("userName").value.trim();
     const email = document.getElementById("userLogin").value.trim().toLowerCase();
     const password = document.getElementById("userPassword").value;
-    if (!name || !email || (!userId && password.length < 8)) { toast("Completá el nombre, un correo válido y una contraseña de al menos 8 caracteres.", "error"); return; }
+    if (!name || !email || (!userId && password.length < 8) || (userId && password && (password.length < 8 || password.length > 128))) { toast("Completá el nombre, un correo válido y una contraseña de entre 8 y 128 caracteres.", "error"); return; }
     if (state.users.some(user => (user.email || user.username)?.toLowerCase() === email && user.id !== userId)) { toast("Ya existe un usuario con ese correo.", "error"); return; }
     const user = state.users.find(item => item.id === userId);
     const isAdministrator = user?.role === "Administrador";
@@ -1792,6 +1805,34 @@
     } catch (error) {
       console.error("No se pudo guardar el usuario en Firebase.", error);
       toast(`No se pudo guardar el usuario: ${cloudErrorMessage(error)}`, "error");
+    }
+  });
+  document.getElementById("passwordResetForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!requirePermission("admin")) return;
+    const user = state.users.find(item => item.id === event.currentTarget.dataset.userId);
+    if (!user || user.role === "Administrador" || user.id === state.currentUserId) return;
+    const email = user.email || user.username || "";
+    if (!email.includes("@")) {
+      toast("El usuario no tiene un correo válido para enviar el restablecimiento.", "error");
+      return;
+    }
+
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      if (!firebaseAuth) throw new Error(firebaseStartupError || "Firebase Authentication no está disponible.");
+      await firebaseAuth.sendPasswordResetEmail(email);
+      audit("Restablecimiento de contraseña enviado", `${user.name} (${email})`);
+      const auditSaved = await saveState();
+      modalInstances.passwordResetModal.hide();
+      if (auditSaved) toast(`Se envió el enlace de restablecimiento a ${email}.`);
+      else toast("Se envió el enlace, pero no se pudo guardar el registro de auditoría.", "error");
+    } catch (error) {
+      console.error("No se pudo enviar el restablecimiento de contraseña.", error);
+      toast(`No se pudo enviar el restablecimiento: ${cloudErrorMessage(error)}`, "error");
+    } finally {
+      submit.disabled = false;
     }
   });
   document.getElementById("permissionRows").addEventListener("change", event => {
