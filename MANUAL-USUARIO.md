@@ -172,7 +172,7 @@ En **Usuarios y auditoría** podés:
 - Agregar usuarios con nombre, correo de Firebase Authentication, contraseña inicial y permisos de **Ver** y **Modificar** por módulo. Los sectores de armado y mecanizado tienen permisos separados.
 - Editar el nombre y los permisos de un usuario con el botón de lápiz. Los correos se administran en Firebase Authentication; cada persona puede restablecer su contraseña desde la pantalla de acceso.
 - Editar el nombre del Administrador desde el mismo botón. El correo y la contraseña del Administrador se administran en Firebase Authentication. Si cambiás el correo allí, el perfil se sincroniza al iniciar sesión; para el primer inicio, actualizá también el correo de bootstrap en `firebase-config.js` y `firestore.rules`.
-- Cerrar sesión desde el nombre de usuario en la parte superior o el ícono junto al perfil e iniciar sesión con otra cuenta.
+- Abrir el menú del nombre de usuario en la parte superior para activar el modo oscuro o cerrar sesión. La preferencia de tema se guarda en ese navegador. También podés cerrar sesión desde el ícono junto al perfil.
 - Desactivar el acceso de otro usuario.
 - Eliminar definitivamente un usuario que no sea Administrador ni la cuenta activa. Esta acción elimina también su cuenta de Firebase Authentication y libera el correo para crear otro perfil. Requiere desplegar la función de Firebase indicada en **Puesta en marcha**; no se puede deshacer.
 - Consultar las acciones registradas en **Registro de auditoría**.

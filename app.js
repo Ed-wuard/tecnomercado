@@ -2,6 +2,7 @@
   "use strict";
 
   const STORE_KEY = "tecnomercado-stock-v1";
+  const THEME_KEY = "tecnomercado-theme";
   const LOW_STOCK_THRESHOLD = 700;
   const firebaseConfig = window.firebaseConfig || {};
   const firebaseConfigured = ["apiKey", "authDomain", "projectId", "appId"].every(key => Boolean(firebaseConfig[key]));
@@ -1063,6 +1064,20 @@
       toast(`No se pudo cerrar sesión: ${cloudErrorMessage(error)}`, "error");
     }
   }
+  function setDarkMode(enabled) {
+    document.body.classList.toggle("dark-mode", enabled);
+    const themeButton = document.getElementById("themeToggle");
+    const themeIcon = document.getElementById("themeToggleIcon");
+    const themeLabel = document.getElementById("themeToggleLabel");
+    themeButton.setAttribute("aria-pressed", String(enabled));
+    themeIcon.className = enabled ? "bi bi-sun" : "bi bi-moon-stars";
+    themeLabel.textContent = enabled ? "Activar modo claro" : "Activar modo oscuro";
+    document.querySelector('meta[name="theme-color"]').content = enabled ? "#151a24" : "#f5f7fb";
+  }
+  function setUserMenuOpen(open) {
+    document.getElementById("userMenuPopover").hidden = !open;
+    document.getElementById("topUserButton").setAttribute("aria-expanded", String(open));
+  }
   function updateLoginScreen() {
     document.getElementById("loginTitle").textContent = "Iniciar sesión";
     document.getElementById("loginSubtitle").textContent = "Ingresá con el correo y la contraseña de Firebase Authentication.";
@@ -1084,9 +1099,14 @@
       "auth/network-request-failed": "No se pudo conectar. Revisá tu conexión a Internet.",
       "auth/email-already-in-use": "Ese correo ya tiene una cuenta en Firebase Authentication.",
       "auth/weak-password": "La contraseña debe tener al menos 8 caracteres.",
-      "auth/operation-not-allowed": "Activá Email/Password en los proveedores de Firebase Authentication."
+      "auth/operation-not-allowed": "Activá Email/Password en los proveedores de Firebase Authentication.",
+      "functions/not-found": "No se encontró la función para eliminar usuarios. Desplegá Firebase Functions y volvé a intentar."
     };
-    return messages[error.code] || error.message || "No se pudo completar la operación con Firebase.";
+    const message = String(error.message || "").trim();
+    if (error.code === "functions/internal" && /^internal(?:\s*\[\d*\s*\])?$/i.test(message)) {
+      return "Firebase no pudo ejecutar la eliminación. Verificá que deleteManagedUser esté desplegada en us-central1 y revisá los registros de Firebase Functions.";
+    }
+    return messages[error.code] || message || "No se pudo completar la operación con Firebase.";
   }
   function showApplication() {
     setViewTextDefaults();
@@ -1813,9 +1833,29 @@
   ["dragleave", "drop"].forEach(type => importDrop.addEventListener(type, event => { event.preventDefault(); importDrop.classList.remove("dragover"); }));
   importDrop.addEventListener("drop", event => handleImport(event.dataTransfer.files[0]));
   document.getElementById("profileSwitch").addEventListener("click", switchUser);
-  document.getElementById("topUserButton").addEventListener("click", switchUser);
+  document.getElementById("topUserButton").addEventListener("click", () => {
+    const button = document.getElementById("topUserButton");
+    setUserMenuOpen(button.getAttribute("aria-expanded") !== "true");
+  });
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    const enabled = !document.body.classList.contains("dark-mode");
+    setDarkMode(enabled);
+    try { localStorage.setItem(THEME_KEY, enabled ? "dark" : "light"); }
+    catch (error) {
+      console.error("No se pudo guardar la preferencia del tema.", error);
+      toast("El tema cambió, pero no se pudo guardar la preferencia en este navegador.", "error");
+    }
+  });
+  document.getElementById("logoutButton").addEventListener("click", async () => {
+    setUserMenuOpen(false);
+    await switchUser();
+  });
   document.getElementById("mobileMenu").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
   document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && document.getElementById("topUserButton").getAttribute("aria-expanded") === "true") {
+      setUserMenuOpen(false);
+      document.getElementById("topUserButton").focus();
+    }
     if (event.target.closest(".stat-link") && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
       event.target.closest(".stat-link").click();
@@ -1824,12 +1864,18 @@
   document.addEventListener("click", event => {
     const sidebar = document.getElementById("sidebar");
     if (window.innerWidth <= 900 && sidebar.classList.contains("open") && !sidebar.contains(event.target) && !event.target.closest("#mobileMenu")) sidebar.classList.remove("open");
+    if (!document.getElementById("userMenu").contains(event.target)) setUserMenuOpen(false);
   });
+  try { setDarkMode(localStorage.getItem(THEME_KEY) === "dark"); }
+  catch (error) {
+    console.error("No se pudo cargar la preferencia del tema.", error);
+    setDarkMode(false);
+  }
   document.getElementById("dailyDate").value = localDateKey(new Date());
   document.getElementById("dailyDate").max = localDateKey(new Date());
   document.getElementById("profileSwitch").title = "Cerrar sesión";
   document.getElementById("profileSwitch").setAttribute("aria-label", "Cerrar sesión");
-  document.getElementById("topUserButton").title = "Cerrar sesión";
+  document.getElementById("topUserButton").title = "Opciones de usuario";
   setViewTextDefaults();
   saveState();
   updateLoginScreen();
